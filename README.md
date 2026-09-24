@@ -4,6 +4,15 @@
 
 ## 快速启动
 
+### 第零步：安装依赖
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
+
+`dev` 可选依赖包含 pytest；只部署服务可以去掉 `[dev]`。
+
 ### 第一步：配置环境变量
 
 编辑 `.env` 文件，填入必要的 API Key：
@@ -68,7 +77,6 @@ python scripts/init_rag.py
 python app/main.py
 # UI: http://localhost:18000/ui
 # API docs: http://localhost:18000/docs
-# 访问 http://localhost:8000/docs
 ```
 
 ## 项目结构
@@ -109,7 +117,6 @@ LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · Redis �
   请求路径；图为空或查询异常时该 Worker 的行为与没有图谱时完全一致。
   `weather`/`transport`/`food` 三个 Worker 暂未接入图证据。
 - 行程草稿常驻（`models/draft.py` + `governance/drafts.py`）：每个会话一份可增量编辑的草稿，版本递增；正式行程仍需审批落库。
-- 行程草稿常驻（`models/draft.py` + `governance/drafts.py`）：每个会话一份可增量编辑的草稿，版本递增；正式行程仍需审批落库。
 - Hybrid RAG：稳定文档/切片 ID、BM25、Dense、RRF、相关性重排和父文档回溯。
 - Evidence：来源、URL、查询时间、有效期、置信度和冲突检查。
 - MCP/API 可靠性：超时、有限重试、请求去重、TTL 缓存、熔断和明确降级。
@@ -122,6 +129,12 @@ LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · Redis �
 ## 关键配置
 
 复制 `.env.example` 为 `.env`，至少配置独立的 `JWT_SECRET_KEY` 和 `DASHSCOPE_API_KEY`。实时数据需要显式设置 `ENABLE_EXTERNAL_TOOLS=true`，并配置相应的 `AMAP_API_KEY`、`TAVILY_API_KEY` 或 MCP 服务地址。
+
+### CrossEncoder 重排（可选）
+
+默认用词频重叠的 `RelevanceReranker`。设置 `ENABLE_CROSS_ENCODER_RERANK=true` 后改用 `app/rag/reranker.py` 的 `CrossEncoderReranker`，对同义改写更敏感。`CROSS_ENCODER_MODEL` 默认 `BAAI/bge-reranker-base`（约 1.1GB，中文效果和体积较均衡）；也可换 `BAAI/bge-reranker-large`（约 2.2GB，更准更慢）。首次调用会从 HuggingFace 下载模型到本地缓存，需要网络。
+
+验证：`RUN_CROSS_ENCODER_TESTS=1 python -m pytest tests/test_cross_encoder_real_model.py -v`。
 
 ## 主要接口
 
