@@ -52,6 +52,8 @@ class TravelLeg(BaseModel):
     mode: str | None = None
     proximity: Proximity = "unknown"
     source: str
+    # 外部路线数据（高德）带上出处，证据治理会丢弃没有 URL 的外部证据。
+    source_url: str | None = None
     retrieved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -117,7 +119,16 @@ class TravelTimeService:
 
 
 def default_travel_time_service() -> TravelTimeService:
-    return TravelTimeService([DistrictEstimateProvider()])
+    """图谱缓存 → 高德（需 ENABLE_EXTERNAL_TOOLS 且配置 AMAP_API_KEY）→ 按区粗估。"""
+    from app.agents.route_graph import AmapRouteProvider, RouteGraphProvider, RouteGraphStore
+    from app.config import settings
+
+    store = RouteGraphStore()
+    providers: list[TravelTimeProvider] = [RouteGraphProvider(store)]
+    if settings.enable_external_tools and settings.amap_api_key:
+        providers.append(AmapRouteProvider(store=store))
+    providers.append(DistrictEstimateProvider())
+    return TravelTimeService(providers)
 
 
 def place_from_option(option: CandidateOption) -> Place:

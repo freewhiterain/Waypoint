@@ -109,7 +109,7 @@ async def test_transport_subagent_turns_prior_places_into_evidence_bound_legs():
     ]
     task = ResearchTask(task_type="transport", query="市内交通")
 
-    response = await TransportSubagent(tool_builder=None).run(task, _requirement(), prior_results=prior)
+    response = await TransportSubagent(tool_builder=None, travel_time=TravelTimeService([DistrictEstimateProvider()])).run(task, _requirement(), prior_results=prior)
 
     assert len(collect_places(prior)) == 3
     assert len(response.candidates) == 3
@@ -125,7 +125,7 @@ async def test_transport_subagent_turns_prior_places_into_evidence_bound_legs():
 async def test_transport_without_places_is_unavailable():
     task = ResearchTask(task_type="transport", query="市内交通")
 
-    response = await TransportSubagent(tool_builder=None).run(task, _requirement(), prior_results=[])
+    response = await TransportSubagent(tool_builder=None, travel_time=TravelTimeService([DistrictEstimateProvider()])).run(task, _requirement(), prior_results=[])
 
     assert response.status == "unavailable"
 
@@ -158,6 +158,10 @@ async def test_supervisor_runs_transport_after_places_and_keeps_its_legs():
     workers["hotel"] = _PlaceSubagent("hotel", ["武侯酒店"])
     workers["food"] = _PlaceSubagent("food", [])
     workers["weather"] = _PlaceSubagent("weather", [])
+    # 只用区级粗估，测试不碰本地数据库里的交通图谱。
+    workers["transport"] = TransportSubagent(
+        tool_builder=None, travel_time=TravelTimeService([DistrictEstimateProvider()])
+    )
     registry = type(registry)(workers)
 
     draft = await run_travel_planning(_requirement(), registry=registry)

@@ -82,9 +82,14 @@ class TransportSubagent(DomainSubagent):
                     id=evidence_id,
                     content=text,
                     source=leg.source,
+                    source_url=leg.source_url,
                     retrieved_at=leg.retrieved_at,
                     confidence=0.8 if leg.minutes is not None else 0.3,
-                    metadata={"source_type": "synthetic", "provider": leg.source},
+                    metadata={
+                        # 有出处的是路线服务（高德或其缓存）的真实数据，其余是按区粗估。
+                        "source_type": "api" if leg.source_url else "synthetic",
+                        "provider": leg.source,
+                    },
                 )
             )
             candidates.append(
