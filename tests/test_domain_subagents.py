@@ -355,8 +355,38 @@ def test_subagent_still_drops_chinese_content_introducing_facts_not_in_evidence(
     )
 
     assert grounded.claims == []
-    assert grounded.candidates == []
+    # 熊猫基地本身有证据，保留地点；编造的"200 元"被换成证据原文。
+    assert [candidate.name for candidate in grounded.candidates] == ["熊猫基地"]
+    assert "200" not in grounded.candidates[0].description
+    assert grounded.candidates[0].description == "熊猫基地上午开放，门票需要提前预约。"
     assert len(warnings) >= 2
+
+
+def test_subagent_keeps_a_real_place_but_strips_commentary_price_and_attributes():
+    agent = AttractionsSubagent()
+    analysis = SubagentAnalysis(
+        candidates=[
+            EvidenceBoundCandidate(
+                name="成都大熊猫繁育研究基地",
+                description="位于成华区，与本次熊猫偏好直接匹配",
+                estimated_cost=58,
+                attributes={"区域": "成华区", "适配偏好": ["熊猫", "亲子"]},
+                evidence_ids=["ev-1"],
+            )
+        ],
+    )
+
+    grounded, warnings = agent._ground_analysis(
+        analysis,
+        [Evidence(id="ev-1", content="### 成都大熊猫繁育研究基地\n位于成华区。是熊猫文化主题下的代表性自然教育地点。",
+                  source="local")],
+    )
+
+    candidate = grounded.candidates[0]
+    assert candidate.description == "位于成华区。是熊猫文化主题下的代表性自然教育地点。"
+    assert candidate.estimated_cost is None
+    assert candidate.attributes == {"区域": "成华区"}
+    assert "Removed unsupported details from a attractions candidate." in warnings
 
 
 def test_estimated_cost_matches_an_integer_price_written_in_the_evidence():

@@ -243,7 +243,11 @@ class DomainSubagent:
                     f"You are the {self.worker} travel research subagent. "
                     "Return concise structured output only. Every claim and candidate "
                     "must cite one or more provided evidence IDs. Do not invent prices, "
-                    "schedules, opening status, availability, inventory, weather, or other facts."
+                    "schedules, opening status, availability, inventory, weather, or other facts. "
+                    "Candidate descriptions must only restate the evidence, without commentary on "
+                    "how well it fits the user. Put facts stated in the evidence into attributes "
+                    "using these keys when available: location (district), opening_hours "
+                    "(HH:MM-HH:MM), duration; set estimated_cost only from a price in the evidence."
                 ),
             },
             {
@@ -338,26 +342,35 @@ class DomainSubagent:
                 for evidence_id in candidate_ids
                 if evidence_id in evidence_by_id
             )
+            # 地点本身（名称 + 引用的证据）对不上才整条丢弃。
             if (
                 not candidate.name.strip()
                 or not candidate_ids
                 or not candidate_ids.issubset(evidence_ids)
                 or not self._text_supported(candidate.name, referenced_text)
-                or (
-                    candidate.description
-                    and not self._text_supported(candidate.description, referenced_text)
-                )
-                or (
-                    candidate.estimated_cost is not None
-                    and not self._text_supported(str(candidate.estimated_cost), referenced_text)
-                )
-                or any(
-                    not self._text_supported(str(value), referenced_text)
-                    for value in candidate.attributes.values()
-                )
             ):
                 warnings.append(f"Dropped an unbound {self.worker} candidate from subagent output.")
                 continue
+            # 地点是真的，但模型往描述、价格、属性里加了证据没有的内容时，只去掉
+            # 这些内容，不丢地点：此前任何一句点评（"与熊猫偏好直接匹配"）都会让
+            # 整条候选消失，规划里常常一个景点都不剩。
+            updates: dict = {}
+            if candidate.description and not self._text_supported(candidate.description, referenced_text):
+                updates["description"] = self._evidence_excerpt(candidate.name, candidate_ids, evidence_by_id)
+            if candidate.estimated_cost is not None and not self._text_supported(
+                str(candidate.estimated_cost), referenced_text
+            ):
+                updates["estimated_cost"] = None
+            supported_attributes = {
+                key: value
+                for key, value in candidate.attributes.items()
+                if self._text_supported(str(value), referenced_text)
+            }
+            if len(supported_attributes) != len(candidate.attributes):
+                updates["attributes"] = supported_attributes
+            if updates:
+                warnings.append(f"Removed unsupported details from a {self.worker} candidate.")
+                candidate = candidate.model_copy(update=updates)
             candidates.append(candidate)
 
         summary = analysis.summary
@@ -369,6 +382,15 @@ class DomainSubagent:
             analysis.model_copy(update={"summary": summary, "claims": claims, "candidates": candidates}),
             warnings,
         )
+
+    @staticmethod
+    def _evidence_excerpt(name: str, evidence_ids: set[str], evidence_by_id: dict[str, Evidence]) -> str:
+        """用证据原文代替不受支持的描述：优先取提到该地点的那条证据，去掉 Markdown 标题。"""
+        texts = [evidence_by_id[evidence_id].content for evidence_id in sorted(evidence_ids) if evidence_id in evidence_by_id]
+        text = next((item for item in texts if name in item), texts[0] if texts else "")
+        lines = [line.strip().lstrip("#").strip() for line in text.splitlines()]
+        body = " ".join(line for line in lines if line and line != name)
+        return body[:200]
 
     @staticmethod
     def _text_supported(text: str, evidence_text: str) -> bool:
