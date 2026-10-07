@@ -77,14 +77,55 @@ def test_budget_sums_grounded_prices_and_marks_missing_categories():
 
     budget = calculate_budget(requirement(), results)
 
+    # 2 天行程住 1 晚；两顿晚餐各 50；两个景点都排进了第 1 天。
     assert budget.categories == {
         "transport": 20.0,
-        "accommodation": 400.0,
+        "accommodation": 200.0,
         "food": 100.0,
         "attractions": 180.0,
         "misc": None,
     }
-    assert budget.total_estimate == 700.0
+    assert budget.total_estimate == 500.0
     # 文案面向终端用户，必须和 render_plan_markdown 的中文正文同语言。
     assert any("预算" in note for note in budget.notes)
     assert any("800.00 元" in note for note in budget.notes)
+
+
+def test_budget_counts_only_scheduled_items_for_every_traveller_and_one_hotel():
+    party = requirement().model_copy(update={"days": 1, "adults": 2, "children": 1, "budget": None})
+    results = [
+        result("attractions", [
+            option("Panda Base", "attractions", 100, "Chenghua"),
+            option("Wenshu", "attractions", 80, "Qingyang"),
+            option("Not scheduled", "attractions", 999, "Far"),
+        ]),
+        result("food", [option("Sichuan dinner", "food", 50, "Jinjiang")]),
+        result("hotel", [
+            CandidateOption(name="Pricey", category="hotel", estimated_cost=900,
+                            attributes={"pricing_unit": "per_night"}, evidence_ids=["hotel-evidence"]),
+        ]),
+    ]
+
+    budget = calculate_budget(party, results)
+
+    assert budget.categories["attractions"] == 540.0  # (100 + 80) × 3 人，第 3 个景点没排进行程
+    assert budget.categories["food"] == 150.0
+    assert budget.categories["accommodation"] == 0.0  # 当天往返
+    assert any("共 3 人" in note for note in budget.notes)
+
+
+def test_budget_uses_cheapest_hotel_with_nights_and_rooms_and_flags_overspend():
+    trip = requirement().model_copy(update={"days": 3, "adults": 3, "budget": 500})
+    results = [
+        result("hotel", [
+            CandidateOption(name="A", category="hotel", estimated_cost=300,
+                            attributes={"pricing_unit": "per_night"}, evidence_ids=["hotel-evidence"]),
+            CandidateOption(name="B", category="hotel", estimated_cost=200,
+                            attributes={"pricing_unit": "per_night"}, evidence_ids=["hotel-evidence"]),
+        ]),
+    ]
+
+    budget = calculate_budget(trip, results)
+
+    assert budget.categories["accommodation"] == 800.0  # 200 × 2 晚 × 2 间房
+    assert any("超出预算 300.00 元" in note for note in budget.notes)

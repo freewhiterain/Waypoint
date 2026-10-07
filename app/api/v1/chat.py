@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -145,10 +146,13 @@ async def generate_sse_stream(
 
         if decision.action == "collect_trip_requirements":
             call_id = uuid4().hex
+            arguments: dict[str, Any] = {"initial_values": decision.initial_values}
+            if decision.requirement_context:
+                arguments["requirement_context"] = decision.requirement_context
             payload = ToolCallPayload(
                 call_id=call_id,
                 tool="collect_trip_requirements",
-                arguments={"initial_values": decision.initial_values},
+                arguments=arguments,
             )
             async with async_session_maker() as db:
                 async with db.begin():

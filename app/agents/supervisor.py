@@ -469,7 +469,8 @@ def create_supervisor_graph(
 
     async def budget_node(state: SupervisorState) -> dict[str, Any]:
         requirement = TravelRequirement.model_validate(state["requirement"])
-        budget = calculate_budget(requirement, _worker_results_from_state(state))
+        itinerary = [ItineraryDay.model_validate(value) for value in state.get("itinerary", [])]
+        budget = calculate_budget(requirement, _worker_results_from_state(state), itinerary)
         await emit(state, "budget_estimated", {"total_estimate": budget.total_estimate})
         return {"budget": budget.model_dump(mode="json")}
 

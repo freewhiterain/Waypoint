@@ -55,10 +55,12 @@ class MainAgentService:
         normalized = self._normalize(text)
 
         if self._is_explicit_planning_request(normalized):
+            initial_values, requirement_context = await self._prefill(text)
             return MainAgentDecision(
                 action="collect_trip_requirements",
                 reason="用户明确请求规划",
-                initial_values=await self._prefill(text),
+                initial_values=initial_values,
+                requirement_context=requirement_context,
             )
         agent_tool_call = self._build_agent_tool_call(text, normalized)
         if agent_tool_call is not None:
@@ -161,13 +163,29 @@ class MainAgentService:
     def _llm_enabled(self) -> bool:
         return self.use_llm is not False and bool(settings.llm_api_key)
 
-    async def _prefill(self, message: str) -> dict[str, Any]:
+    async def _prefill(self, message: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """返回 (表单预填值, 需求上下文)。
+
+        表单只认目的地/日期/天数，前端按 initial_values 原样回填，所以这里不往里加字段；
+        人数、预算、偏好另放进需求上下文，表单提交时由后端合并。只写用户明确说过的值，
+        默认值（1 个大人、0 个孩子、空列表）不写，避免把"没说"伪装成"说了"。
+        """
         draft = await RequirementExtractor().extract(message, use_llm=False)
-        return draft.model_dump(
+        initial_values = draft.model_dump(
             mode="json",
             include={"destination", "departure_date", "days"},
             exclude_none=True,
         )
+        context = draft.model_dump(
+            mode="json",
+            include={"origin", "budget", "styles", "special_needs", "food_preferences"},
+            exclude_none=True,
+        )
+        context = {key: value for key, value in context.items() if value != []}
+        if draft.adults != 1 or draft.children != 0:
+            context["adults"] = draft.adults
+            context["children"] = draft.children
+        return initial_values, context
 
     @staticmethod
     def _mentions_known_destination(text: str) -> bool:
@@ -210,5 +228,8 @@ class MainAgentService:
             )
 
         if decision.action != "collect_trip_requirements":
-            return decision.model_copy(update={"initial_values": {}})
-        return decision.model_copy(update={"initial_values": await self._prefill(message)})
+            return decision.model_copy(update={"initial_values": {}, "requirement_context": {}})
+        initial_values, requirement_context = await self._prefill(message)
+        return decision.model_copy(
+            update={"initial_values": initial_values, "requirement_context": requirement_context}
+        )

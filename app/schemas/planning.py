@@ -61,6 +61,7 @@ class TravelRequirementDraft(BaseModel):
     budget: float | None = Field(default=None, gt=0)
     styles: list[str] = Field(default_factory=list)
     special_needs: list[str] = Field(default_factory=list)
+    food_preferences: list[str] = Field(default_factory=list)
 
     def missing_fields(self) -> list[str]:
         labels = {"origin": "出发地", "destination": "目的地", "departure_date": "出发日期", "days": "出行天数"}

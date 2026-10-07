@@ -56,6 +56,9 @@ class MainAgentDecision(BaseModel):
     reason: str
     response: str | None = None
     initial_values: dict[str, Any] = Field(default_factory=dict)
+    # 表单只问目的地/日期/天数；人数、预算、偏好从用户原话里提取后存在这里，
+    # 表单提交时由后端并进 TravelRequirement，不经过前端。
+    requirement_context: dict[str, Any] = Field(default_factory=dict)
     tool_call: AgentToolCall | None = None
 
 

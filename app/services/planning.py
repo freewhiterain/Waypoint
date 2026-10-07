@@ -14,6 +14,18 @@ CHINESE_NUMBERS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "
 
 RELATIVE_DATES = [("大后天", 3), ("后天", 2), ("明天", 1), ("今天", 0)]
 
+# 人数里常见“两个人”“俩人”，天数正则不认这两个字，所以单独一张表。
+PEOPLE_NUMBERS = {**CHINESE_NUMBERS, "两": 2, "俩": 2}
+_PEOPLE_NUM = r"(\d{1,2}|[一两俩二三四五六七八九十])"
+ADULTS_PATTERN = re.compile(_PEOPLE_NUM + r"\s*个?(?:大人|成人)")
+CHILDREN_PATTERN = re.compile(_PEOPLE_NUM + r"\s*个?(?:孩子|小孩|儿童|宝宝)")
+PEOPLE_PATTERN = re.compile(_PEOPLE_NUM + r"\s*个?(?:人|位)")
+FAMILY_PATTERN = re.compile(r"一家([三四五])口")
+INTERESTS_PATTERN = re.compile(r"喜欢([^，,。；;！!？?\n]{1,30})")
+INTEREST_SEPARATORS = re.compile(r"和|、|及|与|跟|还有|以及|,|，")
+# 顺序有意义：“不吃辣”必须先于“吃辣”判断，否则会被误记成能吃辣。
+FOOD_PREFERENCE_KEYWORDS = ("清淡", "素食", "火锅", "小吃", "海鲜")
+
 GREETING_STOPWORDS = {"你好", "您好", "在吗", "谢谢", "好的", "可以", "没有", "不用", "嗯嗯", "哈喽", "再见"}
 
 KNOWN_DESTINATIONS = {
@@ -68,7 +80,7 @@ class RequirementExtractor:
         for field in ("origin", "destination", "departure_date", "days", "budget"):
             if values[field] is None:
                 values[field] = llm_values[field]
-        for field in ("styles", "special_needs"):
+        for field in ("styles", "special_needs", "food_preferences"):
             merged = values[field] + [item for item in llm_values[field] if item not in values[field]]
             values[field] = merged
         return TravelRequirementDraft(**values)
@@ -122,14 +134,73 @@ class RequirementExtractor:
                     departure_date = today + timedelta(days=offset)
                     break
         styles = [keyword for keyword in ["文化", "美食", "亲子", "户外", "休闲", "自然"] if keyword in text]
+        for interest in RequirementExtractor._extract_interests(text):
+            if interest not in styles:
+                styles.append(interest)
+        adults, children = RequirementExtractor._extract_party(text)
         return TravelRequirementDraft(
             origin=origin_match.group(1) if origin_match else None,
             destination=destination,
             departure_date=departure_date,
             days=days,
+            adults=adults,
+            children=children,
             budget=float(budget_match.group(1)) if budget_match else None,
             styles=styles,
+            food_preferences=RequirementExtractor._extract_food_preferences(text),
         )
+
+    @staticmethod
+    def _people_number(raw: str) -> int | None:
+        return int(raw) if raw.isdigit() else PEOPLE_NUMBERS.get(raw)
+
+    @staticmethod
+    def _extract_party(text: str) -> tuple[int, int]:
+        """只认明确写出的人数；没写就保持 1 个大人，不猜同行人数。"""
+        family = FAMILY_PATTERN.search(text)
+        if family:
+            total = CHINESE_NUMBERS[family.group(1)]
+            return 2, total - 2
+
+        children_match = CHILDREN_PATTERN.search(text)
+        children = RequirementExtractor._people_number(children_match.group(1)) if children_match else 0
+        children = children or 0
+
+        adults_match = ADULTS_PATTERN.search(text)
+        if adults_match:
+            adults = RequirementExtractor._people_number(adults_match.group(1)) or 1
+            return max(adults, 1), children
+
+        # “两个人”“3位”是总人数，里面若另写了孩子数，大人数要扣掉孩子。
+        people_match = PEOPLE_PATTERN.search(text)
+        if people_match:
+            total = RequirementExtractor._people_number(people_match.group(1)) or 1
+            return max(total - children, 1), children
+        return 1, children
+
+    @staticmethod
+    def _extract_interests(text: str) -> list[str]:
+        """“喜欢美食和熊猫”→ ["美食", "熊猫"]，作为风格偏好交给子 Agent。"""
+        interests: list[str] = []
+        for match in INTERESTS_PATTERN.finditer(text):
+            for part in INTEREST_SEPARATORS.split(match.group(1)):
+                item = part.strip().removesuffix("的")
+                # 口味（“喜欢吃辣”）归 food_preferences，不重复记成游玩风格。
+                if "辣" in item:
+                    continue
+                if 1 <= len(item) <= 10 and item not in interests:
+                    interests.append(item)
+        return interests
+
+    @staticmethod
+    def _extract_food_preferences(text: str) -> list[str]:
+        preferences: list[str] = []
+        if "不吃辣" in text or "不能吃辣" in text:
+            preferences.append("不吃辣")
+        elif any(marker in text for marker in ("能吃辣", "爱吃辣", "喜欢吃辣", "无辣不欢")):
+            preferences.append("能吃辣")
+        preferences.extend(keyword for keyword in FOOD_PREFERENCE_KEYWORDS if keyword in text)
+        return preferences
 
 def render_plan_markdown(draft: TravelPlanDraft) -> str:
     lines = [f"# {draft.requirement.destination}{draft.requirement.days}日行程草稿", ""]
