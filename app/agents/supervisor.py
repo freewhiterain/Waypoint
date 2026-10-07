@@ -17,6 +17,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field
 
 from app.agents.planner import create_research_plan, parallel_groups
+from app.agents.itinerary_planner import plan_itinerary
 from app.agents.scheduling import calculate_budget, schedule_itinerary
 from app.agents.subagents.registry import create_default_subagent_registry
 from app.config import settings
@@ -271,6 +272,8 @@ async def synthesize_itinerary_with_llm(
                         "不得虚构任何班次、价格、营业时间或天气结论；"
                         "缺乏依据的时段保持通用描述并注明需实时确认。"
                         "保持天数、日期和 morning/afternoon/evening 三时段结构与模板一致。"
+                        "模板中每个时段的地点和先后顺序已按交通耗时排好，不得更换或调换，标题保留地点名称；"
+                        "travel_minutes 是从上一站过来的真实交通耗时，可写进描述，为空的不要自己估算。"
                     ),
                 },
                 {
@@ -333,8 +336,12 @@ def create_supervisor_graph(
     *,
     checkpointer=None,
     event_service: TaskEventService | None = None,
+    planning_llm: Any | None = None,
 ):
-    """创建按依赖分组、组内并行的 LangGraph。"""
+    """创建按依赖分组、组内并行的 LangGraph。
+
+    planning_llm 用于行程编排里的选点；不传时按规则选点（测试和无 Key 环境）。
+    """
     registry = registry or create_default_subagent_registry()
     governance = EvidenceGovernanceService()
 
@@ -464,7 +471,7 @@ def create_supervisor_graph(
             )
             for response in reviewed.responses
         ]
-        itinerary, scheduling_warnings = schedule_itinerary(requirement, results)
+        itinerary, scheduling_warnings = await plan_itinerary(requirement, results, llm=planning_llm)
         await emit(state, "route_planned", {"days": len(itinerary)})
         return {
             "itinerary": [day.model_dump(mode="json") for day in itinerary],
@@ -528,10 +535,13 @@ async def run_travel_planning(
     task_id: str | None = None,
     user_id: str = "anonymous",
     conversation_id: str | None = None,
+    planning_llm: Any | None = None,
 ) -> TravelPlanDraft:
     """供 API、测试和后台任务调用的结构化规划入口。"""
     task_id = task_id or uuid4().hex
-    graph = create_supervisor_graph(registry, checkpointer=checkpointer, event_service=event_service)
+    graph = create_supervisor_graph(
+        registry, checkpointer=checkpointer, event_service=event_service, planning_llm=planning_llm
+    )
     try:
         result = await graph.ainvoke(
             {

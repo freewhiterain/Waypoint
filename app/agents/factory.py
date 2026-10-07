@@ -50,6 +50,18 @@ def create_planning_registry() -> tuple[Any, str | None]:
     return create_default_subagent_registry(llm=llm), None
 
 
+def _planning_llm() -> Any | None:
+    """行程选点用的 LLM；未配置 Key 或初始化失败时返回 None，改用规则选点。"""
+    if not settings.llm_api_key.strip():
+        return None
+    try:
+        from app.agents.llm import get_llm
+
+        return get_llm()
+    except Exception:
+        return None
+
+
 async def run_travel_planning(requirement, **kwargs):
     """Run planning through the configured production registry."""
     from app.agents.supervisor import run_travel_planning as supervisor_runner
@@ -58,6 +70,7 @@ async def run_travel_planning(requirement, **kwargs):
     fallback_reason = kwargs.pop("fallback_reason", None)
     if registry is None:
         registry, fallback_reason = create_planning_registry()
+    kwargs.setdefault("planning_llm", _planning_llm())
 
     draft = await supervisor_runner(requirement, registry=registry, **kwargs)
     if fallback_reason is None:
