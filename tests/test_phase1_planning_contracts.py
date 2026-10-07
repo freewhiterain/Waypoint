@@ -29,7 +29,7 @@ def test_requirement_rejects_invalid_trip():
         make_requirement(days=0)
 
 
-def test_planner_creates_single_parallel_group_for_confirmed_destination():
+def test_planner_runs_transport_after_the_places_it_connects():
     tasks = create_research_plan(make_requirement())
 
     assert {task.task_type for task in tasks} == {
@@ -40,17 +40,19 @@ def test_planner_creates_single_parallel_group_for_confirmed_destination():
         "weather",
     }
     assert len({task.id for task in tasks}) == 5
-    assert all(task.dependencies == [] for task in tasks)
+    by_type = {task.task_type: task for task in tasks}
+    # 交通查的是市内地点之间的耗时，依赖景点、住宿、美食的候选。
+    assert set(by_type["transport"].dependencies) == {
+        by_type["attractions"].id,
+        by_type["hotel"].id,
+        by_type["food"].id,
+    }
 
     groups = parallel_groups(tasks)
     assert [{task.task_type for task in group} for group in groups] == [
-        {"attractions", "transport", "hotel", "food", "weather"},
+        {"attractions", "hotel", "food", "weather"},
+        {"transport"},
     ]
-
-
-def test_planner_docstring_describes_single_independent_task_group():
-    assert "single parallel group" in create_research_plan.__doc__
-    assert "five independent" in create_research_plan.__doc__
 
 
 def test_parallel_groups_respects_dependencies():

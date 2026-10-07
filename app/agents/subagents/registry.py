@@ -33,6 +33,7 @@ class SubagentRegistry:
         requirement: TravelRequirement,
         *,
         event_callback=None,
+        prior_results=None,
     ) -> SubagentResponse:
         worker = self._workers.get(task.task_type)
         if worker is None:
@@ -43,10 +44,13 @@ class SubagentRegistry:
                 summary="No registered domain subagent is available.",
                 warnings=["subagent_error:worker_unregistered"],
             )
+        kwargs = {}
+        if event_callback is not None and supports_keyword(worker.run, "event_callback"):
+            kwargs["event_callback"] = event_callback
+        if prior_results is not None and supports_keyword(worker.run, "prior_results"):
+            kwargs["prior_results"] = prior_results
         try:
-            if event_callback is not None and supports_keyword(worker.run, "event_callback"):
-                return await worker.run(task, requirement, event_callback=event_callback)
-            return await worker.run(task, requirement)
+            return await worker.run(task, requirement, **kwargs)
         except Exception as exc:
             return SubagentResponse(
                 task_id=task.id,

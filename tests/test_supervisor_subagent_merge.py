@@ -84,12 +84,12 @@ def test_failed_worker_result_summary_uses_fixed_non_factual_text():
     assert result.warnings == ["TimeoutError: attractions provider crashed"]
 
 
-def test_confirmed_destination_plan_creates_five_independent_tasks():
+def test_confirmed_destination_plan_creates_two_task_groups():
     tasks = create_research_plan(_requirement())
 
     assert len(tasks) == 5
-    assert all(task.dependencies == [] for task in tasks)
-    assert len(parallel_groups(tasks)) == 1
+    assert [task.task_type for task in tasks if task.dependencies] == ["transport"]
+    assert len(parallel_groups(tasks)) == 2
 
 
 class FailingWeatherSubagent:

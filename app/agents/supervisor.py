@@ -371,13 +371,20 @@ def create_supervisor_graph(
             return "route_planner"
         task_ids = set(groups[index])
         tasks = [task for task in state.get("tasks", []) if task["id"] in task_ids]
+        completed = _worker_result_mapping(state.get("worker_results", {}))
         return [
             Send(
                 "run_worker",
                 {
                     "requirement": state["requirement"],
                     "task": task,
-                    "worker_results": {},
+                    # 只把依赖任务的结果交给这个 Worker（如交通要用景点/住宿/美食候选）；
+                    # 这些结果已经过 worker 节点的证据治理。
+                    "worker_results": {
+                        dependency: completed[dependency]
+                        for dependency in task.get("dependencies", [])
+                        if dependency in completed
+                    },
                     "task_id": state["task_id"],
                     "user_id": state["user_id"],
                     "conversation_id": state.get("conversation_id"),
@@ -404,15 +411,13 @@ def create_supervisor_graph(
 
         is_mock = False
         response: SubagentResponse | None = None
+        run_kwargs: dict[str, Any] = {}
+        if supports_keyword(registry.run, "event_callback"):
+            run_kwargs["event_callback"] = emit_worker_event
+        if task.dependencies and supports_keyword(registry.run, "prior_results"):
+            run_kwargs["prior_results"] = _worker_results_from_state(state)
         try:
-            if supports_keyword(registry.run, "event_callback"):
-                raw_result = await registry.run(
-                    task,
-                    requirement,
-                    event_callback=emit_worker_event,
-                )
-            else:
-                raw_result = await registry.run(task, requirement)
+            raw_result = await registry.run(task, requirement, **run_kwargs)
             # 兼容旧 WorkerResult 的显式标记，同时按证据来源兜底：subagent 返回的
             # 是 SubagentResponse，只看 isinstance 会让本地模拟资料丢失 mock 披露。
             is_mock = isinstance(raw_result, WorkerResult) and raw_result.is_mock

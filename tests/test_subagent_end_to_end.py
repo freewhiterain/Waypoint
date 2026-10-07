@@ -73,7 +73,7 @@ class ParallelRecordingSubagent:
 
 
 @pytest.mark.asyncio
-async def test_confirmed_trip_runs_five_subagents_in_parallel_and_generates_draft():
+async def test_confirmed_trip_runs_four_subagents_in_parallel_then_transport_and_generates_draft():
     subagent = ParallelRecordingSubagent()
     registry = SubagentRegistry({worker: subagent for worker in WORKERS})
 
@@ -84,7 +84,9 @@ async def test_confirmed_trip_runs_five_subagents_in_parallel_and_generates_draf
     assert result.warnings == []
     assert set(subagent.started) == WORKERS
     assert set(subagent.completed) == WORKERS
-    assert subagent.max_active == 5
+    # 第一批景点/住宿/美食/天气并行；交通依赖前三者的候选，最后单独跑。
+    assert subagent.max_active == 4
+    assert subagent.started[-1] == "transport"
 
 
 @pytest.mark.asyncio
