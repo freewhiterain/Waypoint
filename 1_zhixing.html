@@ -858,80 +858,136 @@
         margin: 10px 0;
       }
 
-      .trip-tool {
-        margin-top: 12px;
-        border: 1px solid rgba(26, 77, 84, 0.2);
-        border-radius: var(--radius-sm);
-        background: rgba(255, 255, 255, 0.9);
-        overflow: hidden;
+      .chat-input-area:not(.trip-active) #tripDock,
+      .chat-input-area.trip-active .chat-input-wrapper { display: none; }
+      .trip-tool-status { margin-top: 8px; font-size: 13px; color: var(--text-light); }
+      .trip-tool-status i { margin-right: 4px; color: var(--primary); }
+      .trip-tool-reopen {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--primary);
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
       }
-
-      .trip-tool-header,
-      .trip-tool-actions,
-      .trip-tool-footer,
-      .trip-tool-options {
-        display: flex;
-        align-items: center;
+      .trip-tool {
+        padding: 16px 16px 14px;
+        border: 1px solid rgba(26, 77, 84, 0.14);
+        border-radius: var(--radius-md);
+        background: var(--white);
+        box-shadow: 0 6px 24px rgba(26, 77, 84, 0.06);
+        outline: none;
       }
 
       .trip-tool-header {
+        display: flex;
+        align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding: 12px 14px;
-        border-bottom: 1px solid rgba(26, 77, 84, 0.12);
+        margin-bottom: 10px;
       }
 
-      .trip-tool-title { font-weight: 600; color: var(--primary); }
-      .trip-tool-progress { font-size: 13px; color: var(--text-light); }
-      .trip-tool-actions { gap: 4px; }
+      .trip-tool-title { font-weight: 600; font-size: 15px; color: var(--text-main); }
+      .trip-tool-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+      .trip-tool-progress { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-main); }
       .trip-tool-icon {
         width: 30px;
         height: 30px;
         border: 0;
+        border-radius: 6px;
         background: transparent;
         color: var(--text-light);
         cursor: pointer;
       }
+      .trip-tool-icon:hover:not(:disabled) { background: #f1f3f2; color: var(--text-main); }
+      .trip-tool-icon:disabled { opacity: 0.35; cursor: default; }
 
-      .trip-tool-body { padding: 14px; }
-      .trip-tool-body[hidden] { display: none; }
-      .trip-tool-step { display: grid; gap: 10px; }
-      .trip-tool-step h4 { margin: 0; font-size: 15px; }
-      .trip-tool-options { flex-wrap: wrap; gap: 8px; }
-      .trip-tool-option {
-        min-height: 36px;
-        padding: 7px 12px;
-        border: 1px solid #cbd8d7;
-        border-radius: 4px;
-        background: #fff;
-        color: var(--text-main);
-        cursor: pointer;
-      }
-      .trip-tool-option.selected { border-color: var(--primary); background: #e7f0ef; }
-      .trip-tool-input {
+      .trip-tool-list { display: grid; }
+      .trip-tool-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         width: 100%;
-        min-height: 40px;
-        border: 1px solid #cbd8d7;
-        border-radius: 4px;
+        min-height: 48px;
         padding: 8px 10px;
+        border: 0;
+        border-bottom: 1px solid #eef0ef;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text-main);
         font: inherit;
-      }
-      .trip-tool-error { min-height: 18px; font-size: 12px; color: #b42318; }
-      .trip-tool-hint { font-size: 12px; color: var(--text-light); }
-      .trip-tool-footer { justify-content: space-between; gap: 10px; margin-top: 14px; }
-      .trip-tool-footer-right { display: flex; gap: 8px; margin-left: auto; }
-      .trip-tool-button {
-        min-height: 36px;
-        padding: 7px 13px;
-        border: 1px solid var(--primary);
-        border-radius: 4px;
-        background: #fff;
-        color: var(--primary);
+        text-align: left;
         cursor: pointer;
       }
-      .trip-tool-button.primary { background: var(--primary); color: #fff; }
-      .trip-tool-button:disabled, .trip-tool-icon:disabled { cursor: wait; opacity: 0.55; }
-      .trip-tool-recommendation { margin: 0 14px 14px; color: var(--text-main); font-size: 13px; line-height: 1.55; }
+      .trip-tool-row:hover,
+      .trip-tool-row:focus-visible,
+      .trip-tool-row.selected {
+        border-radius: 10px;
+        border-bottom-color: transparent;
+        background: #f1f3f2;
+        outline: none;
+      }
+      .trip-tool-row.selected { background: #e7f0ef; }
+      .trip-tool-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        background: #f1f3f2;
+        font-size: 13px;
+      }
+      .trip-tool-row:hover .trip-tool-index,
+      .trip-tool-row:focus-visible .trip-tool-index { background: var(--white); }
+      .trip-tool-row.selected .trip-tool-index { background: var(--primary); color: var(--white); }
+      .trip-tool-label { flex: 1; min-width: 0; }
+      .trip-tool-label small { margin-left: 6px; color: var(--text-light); font-size: 12px; }
+      .trip-tool-arrow { color: var(--text-main); opacity: 0; }
+      .trip-tool-row:hover .trip-tool-arrow,
+      .trip-tool-row:focus-visible .trip-tool-arrow,
+      .trip-tool-row.selected .trip-tool-arrow { opacity: 1; }
+      .trip-tool-other { cursor: text; }
+      .trip-tool-input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text-main);
+        font: inherit;
+        outline: none;
+      }
+      .trip-tool-input::placeholder { color: var(--text-light); }
+
+      .trip-tool-error { min-height: 18px; margin-top: 6px; font-size: 12px; color: #b42318; }
+      .trip-tool-hint { font-size: 13px; color: var(--text-light); }
+      .trip-tool-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 6px;
+      }
+      .trip-tool-summary { font-size: 13px; color: var(--text-light); }
+      .trip-tool-send {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 38px;
+        height: 38px;
+        margin-left: auto;
+        border: 0;
+        border-radius: 50%;
+        background: var(--primary);
+        color: var(--white);
+        cursor: pointer;
+      }
+      .trip-tool-send:hover:not(:disabled) { background: var(--primary-light); }
+      .trip-tool-send:disabled { cursor: wait; opacity: 0.55; }
+      .trip-tool-recommendation { margin-top: 10px; color: var(--text-main); font-size: 13px; line-height: 1.55; }
       .worker-results { margin-top: 14px; padding: 12px; border: 1px solid var(--border); background: #f8faf9; }
       .worker-results-title { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; color: var(--primary); }
       .worker-results-label { font-size: 11px; color: var(--text-light); font-weight: 500; }
@@ -946,10 +1002,8 @@
       .worker-row li { margin: 3px 0; }
 
       @media (max-width: 560px) {
+        .trip-tool { padding: 12px 10px 10px; }
         .trip-tool-header { align-items: flex-start; }
-        .trip-tool-options { display: grid; grid-template-columns: 1fr 1fr; }
-        .trip-tool-option { width: 100%; }
-        .trip-tool-footer { align-items: stretch; flex-wrap: wrap; }
       }
     </style>
   </head>
@@ -1341,6 +1395,7 @@
           return;
         }
         state.tripTools = {};
+        renderTripDock();
         container.innerHTML = messages
           .map(
             (msg, index) => `
@@ -1393,6 +1448,7 @@
 
       function clearChatMessages() {
         state.tripTools = {};
+        renderTripDock();
         document.getElementById("chatMessages").innerHTML = `
                 <div class="welcome-screen">
                     <div class="welcome-logo"><i class="fa-solid fa-paper-plane"></i></div>
@@ -1417,20 +1473,50 @@
           .replace(/'/g, "&#39;");
       }
 
+      const TRIP_DESTINATIONS = ["北京", "上海", "成都", "厦门"];
+      const TRIP_DAY_OPTIONS = [2, 3, 5, 7];
+      const TRIP_QUESTIONS = { 1: "你想去哪里？", 2: "什么时候出发？", 3: "计划旅行几天？" };
+      const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+      function tripStepField(step) {
+        return ["destination", "departure_date", "days"][step - 1];
+      }
+
+      function tripStepError(step, values) {
+        if (step === 1 && !String(values.destination || "").trim()) return "请选择或输入目的地。";
+        if (step === 2) {
+          const date = values.departure_date;
+          if (!date) return "请选择出发日期。";
+          if (date < todayIso()) return "出发日期不能早于今天。";
+        }
+        if (step === 3) {
+          const days = Number(values.days);
+          if (!Number.isInteger(days) || days < 1 || days > 30) return "旅行天数请输入 1-30 的整数。";
+        }
+        return "";
+      }
+
+      // 填槽：只为还缺（或不合法）的槽位出题，用户在第一句话里说过的不再问。
+      function missingTripSteps(values) {
+        return [1, 2, 3].filter((step) => tripStepError(step, values));
+      }
+
       function tripToolDefaults(call, messageId) {
         const initial = call.arguments?.initial_values || call.arguments || {};
+        const values = {
+          destination: initial.destination || "",
+          departure_date: initial.departure_date || "",
+          days: initial.days == null ? "" : String(initial.days),
+        };
+        const askSteps = missingTripSteps(values);
         return {
           callId: call.call_id,
           tool: call.tool,
           messageId,
-          currentStep: 1,
-          values: {
-            destination: initial.destination || "",
-            departure_date: initial.departure_date || "",
-            days: initial.days == null ? "" : String(initial.days),
-          },
+          askSteps,
+          currentStep: askSteps[0] || 3,
+          values,
           errors: {},
-          collapsed: false,
           submitting: false,
           closed: false,
           status: "pending",
@@ -1452,163 +1538,282 @@
         } else if (messageId) {
           existing.messageId = messageId;
         }
-        renderTripTool(call.call_id);
+        const tool = state.tripTools[call.call_id];
+        // 实时收到且三个槽位都齐了：不弹窗，直接提交规划。历史恢复时不自动提交。
+        if (shouldScroll && !existing && tool.askSteps.length === 0) {
+          submitTripToolResult(call.call_id, "completed");
+          return;
+        }
+        renderTripTool(call.call_id, { focus: shouldScroll });
         if (shouldScroll) {
           const container = document.getElementById("chatMessages");
           container.scrollTop = container.scrollHeight;
         }
       }
 
-      function renderTripTool(callId) {
-        const tool = state.tripTools[callId];
-        if (!tool) return;
-        const message = document.getElementById(tool.messageId);
-        if (!message) return;
-        const content = message.querySelector(".message-content");
-        if (!content) return;
-        let panel = findTripToolPanel(callId);
-        if (!panel) {
-          panel = document.createElement("section");
-          panel.className = "trip-tool";
-          panel.dataset.tripCallId = callId;
-          content.appendChild(panel);
+      function localIso(date) {
+        const offset = date.getTimezoneOffset() * 60000;
+        return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+      }
+
+      function formatTripDate(iso) {
+        const [year, month, day] = iso.split("-").map(Number);
+        const date = new Date(year, month - 1, day);
+        return `${month}月${day}日 ${WEEKDAYS[date.getDay()]}`;
+      }
+
+      // 常用出发日期按今天换算成具体日期：后端只接受 YYYY-MM-DD。
+      function tripDateOptions() {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const thisSaturday = new Date(today);
+        thisSaturday.setDate(today.getDate() + ((6 - today.getDay() + 7) % 7));
+        const nextSaturday = new Date(thisSaturday);
+        nextSaturday.setDate(thisSaturday.getDate() + 7);
+        const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        return [
+          { label: "本周末", value: localIso(thisSaturday) },
+          { label: "下周末", value: localIso(nextSaturday) },
+          { label: "下个月初", value: localIso(nextMonth) },
+        ];
+      }
+
+      function tripStepOptions(step) {
+        if (step === 1) {
+          return [
+            ...TRIP_DESTINATIONS.map((destination) => ({ label: destination, value: destination })),
+            { label: "还没想好，帮我推荐", value: "__recommend__" },
+          ];
         }
+        if (step === 2) {
+          return tripDateOptions().map((option) => ({
+            ...option,
+            hint: formatTripDate(option.value),
+          }));
+        }
+        return TRIP_DAY_OPTIONS.map((days) => ({ label: `${days} 天`, value: String(days) }));
+      }
+
+      function tripSummary(tool) {
+        return [
+          tool.values.destination,
+          tool.values.departure_date ? formatTripDate(tool.values.departure_date) : "",
+          tool.values.days ? `${tool.values.days} 天` : "",
+        ].filter(Boolean).join(" · ");
+      }
+
+      function renderTripOtherRow(tool, step, presetValues) {
+        const field = tripStepField(step);
+        const value = tool.values[field] || "";
+        const customValue = presetValues.includes(value) ? "" : value;
         const today = todayIso();
-        const dayOptions = [2, 3, 5, 7];
-        const progress = tool.currentStep === 1 ? "1/3" : `${tool.currentStep}/3`;
-        const selectedDestination = (value) =>
-          value === tool.values.destination ? " selected" : "";
-        const selectedDays = (value) =>
-          String(value) === String(tool.values.days) ? " selected" : "";
-        const error = (field) =>
-          `<div class="trip-tool-error" role="alert">${escapeHtml(tool.errors[field] || "")}</div>`;
+        const input = {
+          1: `<input class="trip-tool-input" name="destination" type="text" maxlength="80" placeholder="其他目的地…" value="${escapeAttribute(customValue)}">`,
+          2: `<input class="trip-tool-input" name="departure_date" type="date" min="${today}" value="${escapeAttribute(customValue)}" aria-label="选择其他出发日期">`,
+          3: `<input class="trip-tool-input" name="days" type="number" min="1" max="30" step="1" placeholder="其他天数（1-30）…" value="${escapeAttribute(customValue)}">`,
+        }[step];
+        return `
+          <label class="trip-tool-row trip-tool-other${customValue ? " selected" : ""}">
+            <span class="trip-tool-index"><i class="fa-solid fa-pen" aria-hidden="true"></i></span>
+            ${input}
+          </label>
+        `;
+      }
+
+      // 聊天记录里只放一行状态；真正的问题卡片停靠在输入框的位置。
+      function renderTripToolStatus(tool) {
+        const message = document.getElementById(tool.messageId);
+        const content = message && message.querySelector(".message-content");
+        if (!content) return;
+        let line = findTripToolPanel(tool.callId);
+        if (!line) {
+          line = document.createElement("div");
+          line.className = "trip-tool-status";
+          line.dataset.tripCallId = tool.callId;
+          content.appendChild(line);
+        }
+        let text;
+        if (tool.status === "completed") text = `<i class="fa-solid fa-circle-check"></i> 旅行规划已提交：${escapeHtml(tripSummary(tool))}`;
+        else if (tool.submitting && tool.status !== "recommend_destination") text = `<i class="fa-solid fa-spinner fa-spin"></i> 正在规划：${escapeHtml(tripSummary(tool))}`;
+        else if (tool.submitting) text = `<i class="fa-solid fa-spinner fa-spin"></i> 正在推荐目的地…`;
+        else if (tool.closed) text = `<button type="button" class="trip-tool-reopen" data-trip-action="reopen">未完成，点击继续填写</button>`;
+        else text = "等待你的回答…";
+        line.innerHTML = `
+          <div>${text}</div>
+          ${tool.recommendation ? `<div class="trip-tool-recommendation">${renderContent("assistant", tool.recommendation)}</div>` : ""}
+        `;
+        const reopen = line.querySelector('[data-trip-action="reopen"]');
+        if (reopen) reopen.addEventListener("click", () => reopenTripTool(tool.callId));
+      }
+
+      function activeTripTool() {
+        const open = Object.values(state.tripTools).filter((tool) =>
+          tool.status !== "completed" && !tool.closed && !tool.submitting
+            && document.getElementById(tool.messageId)
+        );
+        return open[open.length - 1] || null;
+      }
+
+      function renderTripTool(callId, { focus = false } = {}) {
+        const tool = state.tripTools[callId];
+        if (tool) renderTripToolStatus(tool);
+        renderTripDock({ focus });
+      }
+
+      function renderTripDock({ focus = false } = {}) {
+        const area = document.querySelector(".chat-input-area");
+        let dock = document.getElementById("tripDock");
+        if (!dock) {
+          dock = document.createElement("section");
+          dock.id = "tripDock";
+          dock.className = "trip-tool";
+          dock.tabIndex = -1;
+          area.prepend(dock);
+        }
+        const tool = activeTripTool();
+        area.classList.toggle("trip-active", Boolean(tool));
+        if (!tool) {
+          dock.innerHTML = "";
+          dock.onkeydown = null;
+          return;
+        }
+        const callId = tool.callId;
+        // innerHTML 重绘会丢掉焦点；记下来，重绘后还给卡片，数字键选择才能连续使用。
+        const hadFocus = focus || (dock.contains(document.activeElement)
+          && !document.activeElement.matches("input"));
         const step = tool.currentStep;
-        const isComplete = tool.status === "completed";
-        panel.innerHTML = `
+        const page = Math.max(0, tool.askSteps.indexOf(step));
+        const total = tool.askSteps.length;
+        const isLast = page === total - 1;
+        const field = tripStepField(step);
+        const options = tripStepOptions(step);
+        const presetValues = options.map((option) => option.value);
+
+        dock.innerHTML = `
           <div class="trip-tool-header">
-            <div>
-              <div class="trip-tool-title">旅行规划信息</div>
-              <div class="trip-tool-progress">${progress}</div>
-            </div>
+            <div class="trip-tool-title">${TRIP_QUESTIONS[step]}</div>
             <div class="trip-tool-actions">
-              <button type="button" class="trip-tool-icon" data-trip-action="toggle" aria-label="折叠旅行规划表单" title="折叠">
-                <i class="fa-solid fa-chevron-${tool.collapsed ? "down" : "up"}"></i>
+              <button type="button" class="trip-tool-icon" data-trip-action="back" aria-label="上一题" ${page === 0 ? "disabled" : ""}>
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <span class="trip-tool-progress">${page + 1}/${total}</span>
+              <button type="button" class="trip-tool-icon" data-trip-action="forward" aria-label="下一题" ${isLast ? "disabled" : ""}>
+                <i class="fa-solid fa-chevron-right"></i>
               </button>
               <button type="button" class="trip-tool-icon" data-trip-action="close" aria-label="关闭旅行规划表单" title="关闭">
                 <i class="fa-solid fa-xmark"></i>
               </button>
             </div>
           </div>
-          <div class="trip-tool-body" ${tool.collapsed ? "hidden" : ""}>
-            ${isComplete ? `<p class="trip-tool-hint">旅行规划已提交。</p>` : ""}
-            ${!isComplete && step === 1 ? `
-              <div class="trip-tool-step">
-                <h4>1. 你想去哪里？</h4>
-                <div class="trip-tool-options trip-tool-destination-options">
-                  ${["北京", "上海", "成都", "厦门"].map((destination) => `
-                    <button type="button" class="trip-tool-option${selectedDestination(destination)}" data-destination="${destination}">${destination}</button>
-                  `).join("")}
-                  <button type="button" class="trip-tool-option${selectedDestination("__recommend__")}" data-destination="__recommend__">还没想好，帮我推荐</button>
-                </div>
-                <input class="trip-tool-input" name="destination" type="text" maxlength="80" placeholder="或输入其他目的地" value="${escapeAttribute(tool.values.destination === "__recommend__" ? "" : tool.values.destination)}">
-                ${error("destination")}
-              </div>
-            ` : ""}
-            ${!isComplete && step === 2 ? `
-              <div class="trip-tool-step">
-                <h4>2. 什么时候出发？</h4>
-                <input class="trip-tool-input" name="departure_date" type="date" min="${today}" value="${escapeAttribute(tool.values.departure_date)}">
-                ${error("departure_date")}
-              </div>
-            ` : ""}
-            ${!isComplete && step === 3 ? `
-              <div class="trip-tool-step">
-                <h4>3. 计划旅行几天？</h4>
-                <div class="trip-tool-options">
-                  ${dayOptions.map((days) => `<button type="button" class="trip-tool-option${selectedDays(days)}" data-days="${days}">${days} 天</button>`).join("")}
-                </div>
-                <input class="trip-tool-input" name="days" type="number" min="1" max="30" step="1" placeholder="或输入 1-30 天" value="${escapeAttribute(tool.values.days)}">
-                ${error("days")}
-              </div>
-            ` : ""}
-            ${tool.recommendation ? `<div class="trip-tool-recommendation">${renderContent("assistant", tool.recommendation)}</div>` : ""}
-            ${tool.errors.form ? `<div class="trip-tool-error" role="alert">${escapeHtml(tool.errors.form)}</div>` : ""}
-            ${!isComplete ? `
-              <div class="trip-tool-footer">
-                <button type="button" class="trip-tool-button" data-trip-action="recommend" ${tool.submitting ? "disabled" : ""}>推荐目的地</button>
-                <div class="trip-tool-footer-right">
-                  <button type="button" class="trip-tool-button" data-trip-action="back" ${step === 1 || tool.submitting ? "disabled" : ""}>上一步</button>
-                  <button type="button" class="trip-tool-button primary" data-trip-action="next" ${tool.submitting ? "disabled" : ""}>${step === 3 ? "提交规划" : "下一步"}</button>
-                </div>
-              </div>
-            ` : ""}
-            ${tool.submitting ? `<div class="trip-tool-hint">正在提交…</div>` : ""}
+          <div class="trip-tool-list" role="listbox" aria-label="${TRIP_QUESTIONS[step]}">
+            ${options.map((option, index) => `
+              <button type="button" class="trip-tool-row${option.value === tool.values[field] ? " selected" : ""}" data-option-value="${escapeAttribute(option.value)}" role="option" aria-selected="${option.value === tool.values[field]}">
+                <span class="trip-tool-index">${index + 1}</span>
+                <span class="trip-tool-label">${escapeHtml(option.label)}${option.hint ? `<small>${escapeHtml(option.hint)}</small>` : ""}</span>
+                <i class="fa-solid fa-arrow-right trip-tool-arrow" aria-hidden="true"></i>
+              </button>
+            `).join("")}
+            ${renderTripOtherRow(tool, step, presetValues)}
+          </div>
+          <div class="trip-tool-error" role="alert">${escapeHtml(tool.errors[field] || tool.errors.form || "")}</div>
+          <div class="trip-tool-footer">
+            <span class="trip-tool-summary">${isLast ? escapeHtml(tripSummary(tool)) : ""}</span>
+            <button type="button" class="trip-tool-send" data-trip-action="next" aria-label="${isLast ? "提交规划" : "下一题"}" title="${isLast ? "提交规划" : "下一题"}">
+              <i class="fa-solid fa-arrow-up"></i>
+            </button>
           </div>
         `;
-        panel.querySelector('[data-trip-action="toggle"]').addEventListener("click", () => toggleTripTool(callId));
-        panel.querySelector('[data-trip-action="close"]').addEventListener("click", () => closeTripTool(callId));
-        if (isComplete) return;
-        panel.querySelectorAll("[data-destination]").forEach((button) => {
-          button.addEventListener("click", () => {
-            const value = button.dataset.destination;
-            tool.values.destination = value === "__recommend__" ? "" : value;
-            tool.errors.destination = "";
-            renderTripTool(callId);
-          });
+        if (hadFocus) dock.focus({ preventScroll: true });
+
+        dock.querySelector('[data-trip-action="close"]').addEventListener("click", () => closeTripTool(callId));
+        dock.querySelector('[data-trip-action="back"]').addEventListener("click", () => changeTripStep(callId, -1));
+        dock.querySelector('[data-trip-action="forward"]').addEventListener("click", () => changeTripStep(callId, 1));
+        dock.querySelector('[data-trip-action="next"]').addEventListener("click", () => advanceTripTool(callId));
+        dock.querySelectorAll("[data-option-value]").forEach((button) => {
+          button.addEventListener("click", () => chooseTripOption(callId, button.dataset.optionValue));
         });
-        panel.querySelectorAll("[data-days]").forEach((button) => {
-          button.addEventListener("click", () => {
-            tool.values.days = button.dataset.days;
-            tool.errors.days = "";
-            renderTripTool(callId);
-          });
-        });
-        panel.querySelectorAll("input[name]").forEach((input) => {
+        dock.querySelectorAll("input[name]").forEach((input) => {
           input.addEventListener("input", () => {
             tool.values[input.name] = input.value;
             tool.errors[input.name] = "";
           });
+          input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              advanceTripTool(callId);
+            }
+          });
         });
-        panel.querySelector('[data-trip-action="recommend"]').addEventListener("click", () => submitTripToolResult(callId, "recommend_destination"));
-        panel.querySelector('[data-trip-action="back"]').addEventListener("click", () => changeTripStep(callId, -1));
-        panel.querySelector('[data-trip-action="next"]').addEventListener("click", () => {
-          if (tool.currentStep < 3) changeTripStep(callId, 1);
-          else submitTripToolResult(callId, "completed");
-        });
+        dock.onkeydown = (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeTripTool(callId);
+            return;
+          }
+          if (event.target.matches("input")) return;
+          const index = Number(event.key) - 1;
+          if (Number.isInteger(index) && index >= 0 && index < options.length) {
+            event.preventDefault();
+            chooseTripOption(callId, options[index].value);
+          } else if (event.key === "Enter" && !event.target.matches("button")) {
+            event.preventDefault();
+            advanceTripTool(callId);
+          }
+        };
       }
 
-      function toggleTripTool(callId) {
+      // 点选项即作答：不是最后一题就翻页，最后一题只选中，由发送按钮提交，避免误触发规划。
+      function chooseTripOption(callId, value) {
+        const tool = state.tripTools[callId];
+        if (!tool || tool.submitting) return;
+        if (tool.currentStep === 1 && value === "__recommend__") {
+          submitTripToolResult(callId, "recommend_destination");
+          return;
+        }
+        const field = tripStepField(tool.currentStep);
+        tool.values[field] = value;
+        tool.errors[field] = "";
+        const isLast = tool.askSteps.indexOf(tool.currentStep) === tool.askSteps.length - 1;
+        if (!isLast) changeTripStep(callId, 1);
+        else renderTripTool(callId);
+      }
+
+      function advanceTripTool(callId) {
         const tool = state.tripTools[callId];
         if (!tool) return;
-        tool.collapsed = !tool.collapsed;
-        renderTripTool(callId);
+        const isLast = tool.askSteps.indexOf(tool.currentStep) === tool.askSteps.length - 1;
+        if (!isLast) changeTripStep(callId, 1);
+        else submitTripToolResult(callId, "completed");
       }
 
       function closeTripTool(callId) {
         const tool = state.tripTools[callId];
         if (!tool) return;
         tool.closed = true;
-        const panel = findTripToolPanel(callId);
-        if (panel) panel.hidden = true;
+        renderTripTool(callId);
+        document.getElementById("chatInput").focus();
+      }
+
+      function reopenTripTool(callId) {
+        const tool = state.tripTools[callId];
+        if (!tool) return;
+        tool.closed = false;
+        renderTripTool(callId, { focus: true });
       }
 
       function validateTripToolStep(tool) {
-        tool.errors = {};
-        if (tool.currentStep === 1 && !tool.values.destination.trim()) {
-          tool.errors.destination = "请选择或输入目的地。";
+        const field = tripStepField(tool.currentStep);
+        const message = tripStepError(tool.currentStep, tool.values);
+        tool.errors = message ? { [field]: message } : {};
+        return !message;
+      }
+
+      // 确保某个槽位在问题列表里（比如推荐后要回到目的地，或提交时发现预填值已失效）。
+      function ensureTripStep(tool, step) {
+        if (!tool.askSteps.includes(step)) {
+          tool.askSteps = [...tool.askSteps, step].sort((a, b) => a - b);
         }
-        if (tool.currentStep === 2) {
-          const date = tool.values.departure_date;
-          if (!date) tool.errors.departure_date = "请选择出发日期。";
-          else if (date < todayIso()) tool.errors.departure_date = "出发日期不能早于今天。";
-        }
-        if (tool.currentStep === 3) {
-          const days = Number(tool.values.days);
-          if (!Number.isInteger(days) || days < 1 || days > 30) {
-            tool.errors.days = "旅行天数请输入 1-30 的整数。";
-          }
-        }
-        return Object.keys(tool.errors).length === 0;
+        tool.currentStep = step;
       }
 
       function changeTripStep(callId, direction) {
@@ -1617,7 +1822,9 @@
           if (tool) renderTripTool(callId);
           return;
         }
-        tool.currentStep = Math.max(1, Math.min(3, tool.currentStep + direction));
+        const page = tool.askSteps.indexOf(tool.currentStep);
+        const next = Math.max(0, Math.min(tool.askSteps.length - 1, page + direction));
+        tool.currentStep = tool.askSteps[next];
         renderTripTool(callId);
       }
 
@@ -1630,7 +1837,7 @@
         if (result.status === "awaiting_destination") {
           tool.status = "awaiting_destination";
           tool.recommendation = result.message || tool.recommendation;
-          tool.currentStep = 1;
+          ensureTripStep(tool, 1);
           tool.closed = false;
         } else if (result.status === "completed") {
           tool.status = "completed";
@@ -1715,9 +1922,12 @@
         const tool = state.tripTools[callId];
         if (!tool || tool.submitting) return;
         if (status === "completed") {
-          tool.currentStep = 3;
-          if (!validateTripToolStep(tool)) {
-            renderTripTool(callId);
+          const invalidStep = missingTripSteps(tool.values)[0];
+          if (invalidStep) {
+            ensureTripStep(tool, invalidStep);
+            validateTripToolStep(tool);
+            tool.closed = false;
+            renderTripTool(callId, { focus: true });
             return;
           }
           tool.values.days = String(Number(tool.values.days));

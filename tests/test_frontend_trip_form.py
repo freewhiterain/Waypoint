@@ -27,7 +27,7 @@ def test_trip_form_has_three_steps_and_required_controls():
     html = read_page()
 
     assert "currentStep" in html
-    assert "1/3" in html
+    assert "${page + 1}/${total}" in html
     assert 'name="destination"' in html
     assert 'name="departure_date"' in html
     assert 'name="days"' in html
@@ -36,9 +36,33 @@ def test_trip_form_has_three_steps_and_required_controls():
     assert "[2, 3, 5, 7]" in html
     assert "min=\"1\"" in html
     assert "max=\"30\"" in html
-    assert "toggleTripTool" in html
     assert "closeTripTool" in html
     assert "submitting" in html
+
+
+def test_trip_form_is_a_numbered_question_card():
+    html = read_page()
+
+    # 每题一页：编号选项 + "其他"自由输入，点选项即作答，最后一题由发送按钮提交。
+    assert "chooseTripOption" in html
+    assert "advanceTripTool" in html
+    assert "trip-tool-index" in html
+    assert "trip-tool-other" in html
+    assert 'data-trip-action="back"' in html
+    assert 'data-trip-action="forward"' in html
+    assert "tripDateOptions" in html
+    assert '"__recommend__"' in html
+    # 填槽：只为缺失的槽位出题；三个都齐了就直接提交，卡片停靠在输入框位置。
+    assert "missingTripSteps" in html
+    assert "askSteps" in html
+    assert 'id = "tripDock"' in html
+    assert ".chat-input-area.trip-active .chat-input-wrapper" in html
+    receive_start = html.index("function receiveTripToolCall")
+    receive_end = html.index("function localIso", receive_start)
+    assert 'submitTripToolResult(call.call_id, "completed")' in html[receive_start:receive_end]
+    recommend_start = html.index("function chooseTripOption")
+    recommend_end = html.index("function advanceTripTool", recommend_start)
+    assert 'submitTripToolResult(callId, "recommend_destination")' in html[recommend_start:recommend_end]
 
 
 def test_history_renders_tool_state_and_old_ask_card_is_removed():
