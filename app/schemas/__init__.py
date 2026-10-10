@@ -1,5 +1,4 @@
 from app.schemas.planning import (
-    BudgetSummary,
     CandidateOption,
     Evidence,
     ItineraryDay,
@@ -11,7 +10,6 @@ from app.schemas.planning import (
 )
 
 __all__ = [
-    "BudgetSummary",
     "CandidateOption",
     "Evidence",
     "ItineraryDay",

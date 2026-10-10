@@ -61,7 +61,7 @@ class RequirementExtractor:
                         "content": (
                             f"今天是 {today.isoformat()}。从用户文本提取国内旅行需求，以 JSON 格式输出。"
                             "相对日期（如明天、下周六）换算为具体日期。"
-                            "未明确的信息必须返回 null，不得猜测日期、城市、预算或人数。"
+                            "未明确的信息必须返回 null，不得猜测日期、城市或人数。"
                         ),
                     },
                     {"role": "user", "content": text},
@@ -77,7 +77,7 @@ class RequirementExtractor:
         """规则命中的字段优先（确定性高），LLM 只补规则漏掉的。"""
         values = rules.model_dump()
         llm_values = llm.model_dump()
-        for field in ("origin", "destination", "departure_date", "days", "budget"):
+        for field in ("origin", "destination", "departure_date", "days"):
             if values[field] is None:
                 values[field] = llm_values[field]
         for field in ("styles", "special_needs", "food_preferences"):
@@ -119,7 +119,6 @@ class RequirementExtractor:
         days_match = re.search(r"(\d{1,2}|[一二三四五六七八九十])(?:天|日)(?:游|行程)", text)
         if days_match is None:
             days_match = re.search(r"(?:游玩|旅游|旅行|行程|玩)(\d{1,2}|[一二三四五六七八九十])天", text)
-        budget_match = re.search(r"预算(?:约|大约|为)?\s*(\d+(?:\.\d+)?)", text)
         date_match = re.search(r"(20\d{2})[-年/](\d{1,2})[-月/](\d{1,2})日?", text)
         days = None
         if days_match:
@@ -145,7 +144,6 @@ class RequirementExtractor:
             days=days,
             adults=adults,
             children=children,
-            budget=float(budget_match.group(1)) if budget_match else None,
             styles=styles,
             food_preferences=RequirementExtractor._extract_food_preferences(text),
         )

@@ -15,7 +15,6 @@ def make_requirement(**overrides):
         "departure_date": date(2026, 8, 1),
         "days": 5,
         "adults": 2,
-        "budget": 6000,
         "styles": ["culture", "food"],
     }
     data.update(overrides)

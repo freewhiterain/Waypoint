@@ -4,7 +4,7 @@ import pytest
 
 import app.api.v1.planning as planning_api
 from app.schemas.governance import ApprovalDecisionRequest, ApprovalRecord, PreferenceRecord
-from app.schemas.planning import BudgetSummary, TravelPlanDraft, TravelRequirement
+from app.schemas.planning import TravelPlanDraft, TravelRequirement
 
 
 class _FakePreferenceRepository:
@@ -38,7 +38,7 @@ def _patch_task_creation_collaborators(monkeypatch, preference_repository, requi
     async def fake_run_travel_planning(requirement, **kwargs):
         requirement_holder["requirement"] = requirement
         return TravelPlanDraft(
-            requirement=requirement, itinerary=[], budget=BudgetSummary(), worker_results=[], evidence=[]
+            requirement=requirement, itinerary=[], worker_results=[], evidence=[]
         )
 
     monkeypatch.setattr(planning_api, "run_travel_planning", fake_run_travel_planning)

@@ -35,7 +35,6 @@ class TravelRequirement(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     adults: int = Field(default=1, ge=1, le=30)
     children: int = Field(default=0, ge=0, le=20)
-    budget: float | None = Field(default=None, gt=0)
     styles: list[str] = Field(default_factory=list)
     special_needs: list[str] = Field(default_factory=list)
     transport_preferences: list[str] = Field(default_factory=list)
@@ -58,7 +57,6 @@ class TravelRequirementDraft(BaseModel):
     days: int | None = Field(default=None, ge=1, le=30)
     adults: int = Field(default=1, ge=1, le=30)
     children: int = Field(default=0, ge=0, le=20)
-    budget: float | None = Field(default=None, gt=0)
     styles: list[str] = Field(default_factory=list)
     special_needs: list[str] = Field(default_factory=list)
     food_preferences: list[str] = Field(default_factory=list)
@@ -152,17 +150,9 @@ class ItineraryDay(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
-class BudgetSummary(BaseModel):
-    currency: str = "CNY"
-    total_estimate: float | None = Field(default=None, ge=0)
-    categories: dict[str, float | None] = Field(default_factory=dict)
-    notes: list[str] = Field(default_factory=list)
-
-
 class TravelPlanDraft(BaseModel):
     requirement: TravelRequirement
     itinerary: list[ItineraryDay]
-    budget: BudgetSummary
     worker_results: list[WorkerResult]
     evidence: list[Evidence]
     warnings: list[str] = Field(default_factory=list)

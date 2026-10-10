@@ -10,7 +10,7 @@ from app.api.v1 import planning as planning_api
 from app.api.v1 import tools as tools_api
 from app.governance.events import InMemoryEventRepository
 from app.schemas.governance import TaskEventRecord
-from app.schemas.planning import BudgetSummary, TripDraftRecord, TravelPlanDraft, TravelRequirement
+from app.schemas.planning import TripDraftRecord, TravelPlanDraft, TravelRequirement
 
 from tests.test_trip_form_tool_flow import (
     FakeDraft,
@@ -34,7 +34,6 @@ def draft_for(requirement: TravelRequirement) -> TravelPlanDraft:
     return TravelPlanDraft(
         requirement=requirement,
         itinerary=[],
-        budget=BudgetSummary(),
         worker_results=[],
         evidence=[],
     )

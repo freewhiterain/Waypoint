@@ -99,33 +99,6 @@ async def test_llm_selection_is_sanitized_scheduled_and_given_real_travel_times(
     assert "itinerary_selection_dropped:attractions" in warnings
 
 
-@pytest.mark.asyncio
-async def test_violations_are_fed_back_to_the_llm_for_a_second_round():
-    expensive = [
-        result("attractions", [option("贵景点", "attractions", 3000), option("便宜景点", "attractions", 50)]),
-        result("food", [option("火锅", "food", 100)]),
-    ]
-    llm = FakeLLM([
-        PlaceSelection(attractions=[SelectedPlace(id="贵景点")], dinners=[SelectedPlace(id="火锅")]),
-        PlaceSelection(attractions=[SelectedPlace(id="便宜景点")], dinners=[SelectedPlace(id="火锅")]),
-    ])
-
-    itinerary, warnings = await plan_itinerary(requirement(days=1, budget=500), expensive, llm=llm)
-
-    assert itinerary[0].slots[0].title == "便宜景点"
-    assert len(llm.prompts) == 2 and "超出预算" in llm.prompts[1]
-    assert not any(warning.startswith("itinerary_constraint") for warning in warnings)
-
-
-@pytest.mark.asyncio
-async def test_rule_fallback_keeps_cutting_until_within_budget():
-    pricey = [result("attractions", [option("A", "attractions", 300), option("B", "attractions", 300)])]
-
-    itinerary, warnings = await plan_itinerary(requirement(days=1, budget=400), pricey)
-
-    titles = [slot.title for slot in itinerary[0].slots]
-    assert sum(title in {"A", "B"} for title in titles) == 1
-    assert not any(warning.startswith("itinerary_constraint") for warning in warnings)
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,6 @@ from app.agents.subagents.registry import SubagentRegistry
 from app.agents.supervisor import assemble_draft, run_travel_planning
 from app.agents.workers.rag_analysis import WorkerAnalysis, worker_result_from_analysis
 from app.schemas.planning import (
-    BudgetSummary,
     Evidence,
     ResearchTask,
     TravelRequirement,
@@ -106,7 +105,7 @@ def test_runtime_workers_without_evidence_still_degrade_the_draft():
         for name in WORKERS
     ]
 
-    draft = assemble_draft(_requirement(), results, [], BudgetSummary())
+    draft = assemble_draft(_requirement(), results, [])
 
     assert draft.degraded_reason == "worker_unavailable"
     assert draft.status == "degraded"
@@ -127,7 +126,7 @@ def test_mock_backed_results_still_keep_the_draft_out_of_provider_degraded():
         for name in WORKERS
     ]
 
-    draft = assemble_draft(_requirement(), results, [], BudgetSummary())
+    draft = assemble_draft(_requirement(), results, [])
 
     assert draft.degraded_reason is None
     assert draft.status == "draft"

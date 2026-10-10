@@ -1,6 +1,6 @@
-"""行程与预算的用户可见文案必须是中文。
+"""行程的用户可见文案必须是中文。
 
-app/agents/scheduling.py 的兜底文案（无候选时的时段标题/描述、预算备注）
+app/agents/scheduling.py 的兜底文案（无候选时的时段标题/描述）
 会被 app/services/planning.py:render_plan_markdown 直接插进中文正文里：
 
     - **上午**：Flexible local time。No second evidence-backed attraction was available.
@@ -11,16 +11,15 @@ app/agents/scheduling.py 的兜底文案（无候选时的时段标题/描述、
 
 from datetime import date
 
-from app.agents.scheduling import calculate_budget, schedule_itinerary
+from app.agents.scheduling import schedule_itinerary
 from app.schemas.planning import CandidateOption, Evidence, TravelRequirement, WorkerResult
 
 
-def _requirement(*, days: int = 2, budget: float | None = 800) -> TravelRequirement:
+def _requirement(*, days: int = 2) -> TravelRequirement:
     return TravelRequirement(
         destination="成都",
         departure_date=date(2026, 8, 1),
         days=days,
-        budget=budget,
     )
 
 
@@ -42,13 +41,6 @@ def test_empty_plan_fallback_slots_are_chinese():
             assert not _has_latin_words(slot.title), f"时段标题渗出英文: {slot.title}"
             assert not _has_latin_words(slot.description), f"时段描述渗出英文: {slot.description}"
 
-
-def test_budget_notes_are_chinese_with_and_without_a_user_budget():
-    for budget_value in (800, None):
-        summary = calculate_budget(_requirement(budget=budget_value), [])
-        assert summary.notes
-        for note in summary.notes:
-            assert not _has_latin_words(note), f"预算备注渗出英文: {note}"
 
 
 def test_candidate_titles_still_pass_through_untouched():

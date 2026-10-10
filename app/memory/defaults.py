@@ -15,13 +15,12 @@ LIST_PREFERENCE_KEYS = (
     "transport_preferences",
     "special_needs",
 )
-SCALAR_PREFERENCE_KEYS = ("budget",)
 
 
 async def resolve_preference_defaults(user_id: str, repository: PreferenceRepository) -> dict[str, Any]:
     """读取该用户已确认的偏好，按 key 取确认时间最新的一条，过滤词表外/类型不匹配的记录。"""
     records = await repository.list(user_id)
-    valid_keys = set(LIST_PREFERENCE_KEYS) | set(SCALAR_PREFERENCE_KEYS)
+    valid_keys = set(LIST_PREFERENCE_KEYS)
 
     latest_value_by_key: dict[str, Any] = {}
     for record in sorted(records, key=lambda item: item.confirmed_at):
@@ -30,16 +29,10 @@ async def resolve_preference_defaults(user_id: str, repository: PreferenceReposi
 
     defaults: dict[str, Any] = {}
     for key, value in latest_value_by_key.items():
-        if key in LIST_PREFERENCE_KEYS:
-            if isinstance(value, list) and all(isinstance(item, str) for item in value):
-                defaults[key] = value
-            else:
-                app_logger.warning(f"忽略类型不匹配的长期偏好: user={user_id} key={key} value={value!r}")
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            defaults[key] = value
         else:
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                defaults[key] = float(value)
-            else:
-                app_logger.warning(f"忽略类型不匹配的长期偏好: user={user_id} key={key} value={value!r}")
+            app_logger.warning(f"忽略类型不匹配的长期偏好: user={user_id} key={key} value={value!r}")
     return defaults
 
 
@@ -49,8 +42,6 @@ def apply_preference_defaults(requirement: TravelRequirement, defaults: dict[str
     for key in LIST_PREFERENCE_KEYS:
         if key in defaults and not getattr(requirement, key):
             updates[key] = defaults[key]
-    if "budget" in defaults and requirement.budget is None:
-        updates["budget"] = defaults["budget"]
     if not updates:
         return requirement
     return requirement.model_copy(update=updates)

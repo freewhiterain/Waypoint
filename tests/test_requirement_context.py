@@ -1,7 +1,7 @@
-"""表单只问目的地/日期/天数，人数、预算、偏好必须从原话一路带进 TravelRequirement。
+"""表单只问目的地/日期/天数，人数和偏好必须从原话一路带进 TravelRequirement。
 
-回归：用户说"两个人，预算5000元，喜欢美食和熊猫"，规划拿到的却是
-adults=1、budget=None、没有偏好——表单提交时只用了表单的三个字段。
+回归：用户说"两个人，喜欢美食和熊猫"，规划拿到的却是 adults=1、没有偏好——
+表单提交时只用了表单的三个字段。
 """
 
 from datetime import date
@@ -24,7 +24,7 @@ from tests.test_trip_form_tool_flow import (
 )
 
 
-MESSAGE = "我想下个月去成都玩三天，两个人，预算5000元，喜欢美食和熊猫，帮我规划一下行程"
+MESSAGE = "我想下个月去成都玩三天，两个人，喜欢美食和熊猫，帮我规划一下行程"
 
 
 @pytest.mark.parametrize(
@@ -47,7 +47,6 @@ def test_party_size_is_extracted_only_when_stated(text, adults, children):
 def test_interests_and_food_preferences_are_extracted():
     draft = RequirementExtractor._extract_rules(MESSAGE + "，不吃辣", date(2026, 10, 7))
 
-    assert draft.budget == 5000
     assert "美食" in draft.styles and "熊猫" in draft.styles
     assert draft.food_preferences == ["不吃辣"]
 
@@ -60,7 +59,6 @@ async def test_planning_request_keeps_form_prefill_unchanged_and_adds_context():
     # 前端按 initial_values 回填表单，这里不能混进表单没有的字段。
     assert decision.initial_values == {"destination": "成都", "days": 3}
     assert decision.requirement_context["adults"] == 2
-    assert decision.requirement_context["budget"] == 5000
     assert {"美食", "熊猫"} <= set(decision.requirement_context["styles"])
 
 
@@ -74,8 +72,8 @@ async def test_request_without_extra_details_has_empty_context():
 def test_form_values_override_context_and_bad_context_falls_back_to_form():
     form = {"destination": "成都", "departure_date": date(2026, 11, 14), "days": 3}
 
-    merged = build_requirement(form, {"requirement_context": {"adults": 2, "budget": 5000, "days": 9}})
-    assert merged.adults == 2 and merged.budget == 5000 and merged.days == 3
+    merged = build_requirement(form, {"requirement_context": {"adults": 2, "styles": ["美食"], "days": 9}})
+    assert merged.adults == 2 and merged.styles == ["美食"] and merged.days == 3
 
     conflicting = build_requirement(form, {"requirement_context": {"origin": "成都", "adults": 2}})
     assert conflicting.origin is None and conflicting.adults == 1
@@ -89,7 +87,7 @@ async def test_form_submission_passes_context_into_planning(monkeypatch):
     record = invocation(user_id=str(user.id))
     record.arguments = {
         "initial_values": {"destination": "成都", "days": 3},
-        "requirement_context": {"adults": 2, "budget": 5000, "styles": ["美食", "熊猫"]},
+        "requirement_context": {"adults": 2, "styles": ["美食", "熊猫"]},
     }
     repository = InMemoryInvocationRepository([record])
     configure_endpoint(monkeypatch, repository)
@@ -116,5 +114,5 @@ async def test_form_submission_passes_context_into_planning(monkeypatch):
     assert len(calls) == 1
     requirement = calls[0]
     assert isinstance(requirement, TravelRequirement)
-    assert (requirement.adults, requirement.budget) == (2, 5000)
+    assert requirement.adults == 2
     assert requirement.styles == ["美食", "熊猫"]

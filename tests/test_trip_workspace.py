@@ -7,7 +7,7 @@ from app.governance.drafts import (
     load_trip_draft_context,
     save_trip_draft,
 )
-from app.schemas.planning import BudgetSummary, TravelPlanDraft, TravelRequirement
+from app.schemas.planning import TravelPlanDraft, TravelRequirement
 
 
 def requirement() -> TravelRequirement:
@@ -24,7 +24,6 @@ async def test_save_trip_draft_persists_owned_workspace_and_increments_version()
     draft = TravelPlanDraft(
         requirement=requirement(),
         itinerary=[],
-        budget=BudgetSummary(),
         worker_results=[],
         evidence=[],
     )
@@ -44,7 +43,6 @@ async def test_load_trip_draft_context_returns_only_the_owned_workspace():
     draft = TravelPlanDraft(
         requirement=requirement(),
         itinerary=[],
-        budget=BudgetSummary(),
         worker_results=[],
         evidence=[],
     )

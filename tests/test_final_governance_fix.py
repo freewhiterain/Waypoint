@@ -5,7 +5,7 @@ import pytest
 from app.agents.subagents.registry import SubagentRegistry
 from app.agents.supervisor import run_travel_planning
 from app.governance.evidence import EvidenceGovernanceService
-from app.schemas.planning import BudgetSummary, Evidence, ResearchTask, TravelPlanDraft, TravelRequirement
+from app.schemas.planning import Evidence, ResearchTask, TravelPlanDraft, TravelRequirement
 from app.schemas.research import Claim, EvidenceBoundCandidate, SubagentResponse
 
 
@@ -214,7 +214,6 @@ async def test_factory_preserves_runtime_degraded_reason_when_configuration_also
     runtime_draft = TravelPlanDraft(
         requirement=requirement,
         itinerary=[],
-        budget=BudgetSummary(),
         worker_results=[],
         evidence=[],
         status="degraded",

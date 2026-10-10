@@ -16,7 +16,6 @@ def requirement():
         departure_date=date(2026, 8, 1),
         days=5,
         adults=2,
-        budget=6000,
         styles=["culture", "food"],
     )
 
@@ -39,7 +38,6 @@ async def test_supervisor_returns_full_draft_without_fake_realtime_facts():
         "afternoon",
         "evening",
     ]
-    assert draft.budget.total_estimate is None
     assert "order" not in draft.model_dump_json().lower()
     assert "payment" not in draft.model_dump_json().lower()
 

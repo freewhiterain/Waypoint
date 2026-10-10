@@ -3,12 +3,13 @@
 分工参考 ItiNera（LLM 理解偏好、算法保证空间顺路）和 LLM-Modulo（外部检查器
 把关、违规反馈给 LLM）：
 
-1. 选点（LLM）：按偏好、天气、预算从已通过证据治理的候选里挑景点、晚餐和落脚酒店。
+1. 选点（LLM）：按偏好和天气从已通过证据治理的候选里挑景点、晚餐和落脚酒店。
    只能引用候选 id，引用不存在的 id 直接丢弃；没有 LLM 或调用失败时按规则挑选。
 2. 排程（算法）：以酒店为中心，按交通耗时把景点两两成组分到每天，再在每天内部
    选最省路的先后顺序；晚餐选离当天最后一站最近的餐厅。
-3. 检查（代码）：开放时间、每天交通总耗时、预算。违规时把原因交回第 1 步，最多重试
-   MAX_ROUNDS 次，仍不通过就采用最后一版并把违规写进 warnings。
+3. 检查（代码）：开放时间、每天交通总耗时。违规时把原因交回第 1 步，最多重试
+   MAX_ROUNDS 次，仍不通过就采用最后一版并把违规写进 warnings。规则选点不会根据
+   反馈调整，只排一轮。
 
 交通耗时来自交通子 Agent 的 travel_leg 候选。没有真实分钟数时（只有区级粗估），
 排程只用一个内部代价来比较远近，展示给用户的耗时保持为空，不编造数字。
@@ -23,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agents.scheduling import calculate_budget, schedule_itinerary
+from app.agents.scheduling import schedule_itinerary
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -130,7 +131,7 @@ async def select_places_with_llm(
             "content": (
                 "你是行程选点助手，以 JSON 格式输出。只能从给定候选里按 id 选择，不得新增地点。"
                 f"每天最多 {ATTRACTIONS_PER_DAY} 个景点、1 顿晚餐；景点总数不超过天数×{ATTRACTIONS_PER_DAY}。"
-                "按用户偏好、人数、预算取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
+                "按用户偏好和人数取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
                 "选一个落脚酒店（hotel_id），尽量靠近所选景点。顺序和分天由后续算法决定，不需要你排。"
             ),
         },
@@ -160,26 +161,12 @@ def _keyword_score(option: CandidateOption, requirement: TravelRequirement) -> i
 def select_places_by_rules(
     requirement: TravelRequirement,
     results: list[WorkerResult],
-    feedback: list[Violation],
-    *,
-    budget_cuts: int = 0,
 ) -> PlaceSelection:
-    """没有 LLM 时的选点：偏好命中多的优先，其余保持子 Agent 给出的顺序。
-
-    每次因超预算重选，就多去掉一个景点，并改选最便宜的酒店。
-    """
-    over_budget = budget_cuts > 0
-    attractions = sorted(
-        _options(results, "attractions"),
-        key=lambda option: (
-            -_keyword_score(option, requirement),
-            (option.estimated_cost or 0) if over_budget else 0,
-        ),
-    )
+    """没有 LLM 时的选点：偏好命中多的优先，其余保持子 Agent 给出的顺序。"""
+    attractions = sorted(_options(results, "attractions"), key=lambda option: -_keyword_score(option, requirement))
     dinners = sorted(_options(results, "food"), key=lambda option: -_keyword_score(option, requirement))
     hotels = _options(results, "hotel")
-    hotels = sorted(hotels, key=lambda option: option.estimated_cost or 0) if over_budget else hotels
-    limit = max(requirement.days * ATTRACTIONS_PER_DAY - budget_cuts, 0)
+    limit = requirement.days * ATTRACTIONS_PER_DAY
     return PlaceSelection(
         hotel_id=hotels[0].id if hotels else None,
         attractions=[SelectedPlace(id=option.id) for option in attractions[:limit]],
@@ -362,14 +349,6 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
         if travel > MAX_DAILY_TRAVEL_MINUTES:
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天路上耗时约 {travel} 分钟，超过 {MAX_DAILY_TRAVEL_MINUTES} 分钟。"))
-
-    if requirement.budget is not None:
-        budget = calculate_budget(requirement, results, itinerary)
-        if budget.total_estimate is not None and budget.total_estimate > requirement.budget:
-            violations.append(Violation(
-                code="over_budget",
-                message=f"已知费用约 {budget.total_estimate:.0f} 元，超出预算 {requirement.budget:.0f} 元，请换便宜的选项或少排收费景点。",
-            ))
     return violations
 
 
@@ -390,7 +369,6 @@ async def plan_itinerary(
     warnings: list[str] = []
     feedback: list[Violation] = []
     itinerary: list[ItineraryDay] = []
-    budget_cuts = 0
     for _round in range(MAX_ROUNDS):
         selection = None
         if llm is not None:
@@ -400,15 +378,16 @@ async def plan_itinerary(
                 app_logger.warning(f"LLM 选点失败，改用规则选点: {type(exc).__name__}: {exc}")
                 warnings.append("itinerary_selection_fallback:llm_failed")
                 llm = None
-        if selection is None:
-            budget_cuts += any(item.code == "over_budget" for item in feedback)
-            selection = select_places_by_rules(requirement, results, feedback, budget_cuts=budget_cuts)
+        by_rules = selection is None
+        if by_rules:
+            selection = select_places_by_rules(requirement, results)
         selection, sanitize_warnings = _sanitize(selection, requirement, results)
         warnings.extend(sanitize_warnings)
 
         itinerary = build_itinerary(requirement, results, selection, costs)
         feedback = check_itinerary(requirement, results, itinerary)
-        if not feedback:
+        # 规则选点不会根据违规原因调整，重选也是同一个结果，只有 LLM 选点才值得再来一轮。
+        if not feedback or by_rules:
             break
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
     return itinerary, list(dict.fromkeys(warnings))

@@ -57,7 +57,7 @@ async def save_assistant_message(conversation_id: str, content: str, extra_info:
 
 
 def build_requirement(form_result: dict, arguments: dict | None) -> TravelRequirement:
-    """表单确认值 + 主 Agent 从原话里提取的人数/预算/偏好。
+    """表单确认值 + 主 Agent 从原话里提取的人数/偏好。
 
     表单字段优先：用户在表单里改过的值必须覆盖原话推断。上下文里有任何字段
     导致校验失败（如出发地与目的地相同），就退回只用表单值，不让规划因为

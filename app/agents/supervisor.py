@@ -2,7 +2,7 @@
 
 图结构（确定性 DAG）：
     planner → dispatch ⇄ run_worker（按依赖分组扇出，组内并行）
-            → route_planner → budget → synthesize → END
+            → route_planner → synthesize → END
 
 只有 synthesize 节点使用 LLM（可用时），其余全部是确定性函数。
 """
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.planner import create_research_plan, parallel_groups
 from app.agents.itinerary_planner import plan_itinerary
-from app.agents.scheduling import calculate_budget, schedule_itinerary
+from app.agents.scheduling import schedule_itinerary
 from app.agents.subagents.registry import create_default_subagent_registry
 from app.config import settings
 from app.governance.evidence import EvidenceGovernanceService, ReviewedResearch
@@ -26,7 +26,6 @@ from app.governance.events import TaskEventService
 from app.rag.evidence import evidence_is_mock
 from app.rag.identifiers import stable_hash
 from app.schemas.planning import (
-    BudgetSummary,
     CandidateOption,
     ItineraryDay,
     ResearchTask,
@@ -71,7 +70,6 @@ class SupervisorState(TypedDict, total=False):
     worker_results: Annotated[dict[str, dict[str, Any]], merge_worker_results]
     subagent_responses: Annotated[dict[str, dict[str, Any]], merge_worker_results]
     itinerary: list[dict[str, Any]]
-    budget: dict[str, Any]
     draft: dict[str, Any]
     status: str
     warnings: list[str]
@@ -300,7 +298,6 @@ def assemble_draft(
     requirement: TravelRequirement,
     results: list[WorkerResult],
     itinerary: list[ItineraryDay],
-    budget: BudgetSummary,
     *,
     governance_warnings: list[str] | None = None,
 ) -> TravelPlanDraft:
@@ -322,7 +319,6 @@ def assemble_draft(
     return TravelPlanDraft(
         requirement=requirement,
         itinerary=itinerary,
-        budget=budget,
         worker_results=results,
         evidence=evidence,
         warnings=list(dict.fromkeys(warnings)),
@@ -479,24 +475,15 @@ def create_supervisor_graph(
             "warnings": [*reviewed.warnings, *scheduling_warnings],
         }
 
-    async def budget_node(state: SupervisorState) -> dict[str, Any]:
-        requirement = TravelRequirement.model_validate(state["requirement"])
-        itinerary = [ItineraryDay.model_validate(value) for value in state.get("itinerary", [])]
-        budget = calculate_budget(requirement, _worker_results_from_state(state), itinerary)
-        await emit(state, "budget_estimated", {"total_estimate": budget.total_estimate})
-        return {"budget": budget.model_dump(mode="json")}
-
     async def synthesizer_node(state: SupervisorState) -> dict[str, Any]:
         requirement = TravelRequirement.model_validate(state["requirement"])
         results = _worker_results_from_state(state)
         template = [ItineraryDay.model_validate(value) for value in state.get("itinerary", [])]
-        budget = BudgetSummary.model_validate(state["budget"])
         itinerary = await synthesize_itinerary_with_llm(requirement, results, template)
         draft = assemble_draft(
             requirement,
             results,
             itinerary,
-            budget,
             governance_warnings=state.get("warnings", []),
         )
         await emit(state, "plan_generated", {"days": len(draft.itinerary), "warnings": len(draft.warnings)})
@@ -513,15 +500,13 @@ def create_supervisor_graph(
     workflow.add_node("run_worker", worker_node)
     workflow.add_node("advance", advance_node)
     workflow.add_node("route_planner", route_planner_node)
-    workflow.add_node("budget", budget_node)
     workflow.add_node("synthesize", synthesizer_node)
     workflow.add_edge(START, "planner")
     workflow.add_edge("planner", "dispatch")
     workflow.add_conditional_edges("dispatch", route_group, ["run_worker", "route_planner"])
     workflow.add_edge("run_worker", "advance")
     workflow.add_edge("advance", "dispatch")
-    workflow.add_edge("route_planner", "budget")
-    workflow.add_edge("budget", "synthesize")
+    workflow.add_edge("route_planner", "synthesize")
     workflow.add_edge("synthesize", END)
     return workflow.compile(checkpointer=checkpointer)
 
@@ -581,11 +566,3 @@ def build_itinerary(
     itinerary, _warnings = schedule_itinerary(requirement, results)
     return itinerary
 
-
-def build_budget(
-    requirement: TravelRequirement,
-    results: list[WorkerResult] | None = None,
-) -> BudgetSummary:
-    """Compatibility wrapper for evidence-backed budget calculation."""
-
-    return calculate_budget(requirement, results or [])

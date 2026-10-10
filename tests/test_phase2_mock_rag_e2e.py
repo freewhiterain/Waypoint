@@ -215,7 +215,6 @@ async def test_single_worker_exception_does_not_block_other_worker_results():
         assert result.evidence
         assert result.is_mock is True
 
-    # The overall draft still assembles: itinerary/budget generation is not blocked
+    # The overall draft still assembles: itinerary generation is not blocked
     # by a single failed Worker.
     assert draft.itinerary
-    assert draft.budget is not None

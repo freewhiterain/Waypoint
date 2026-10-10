@@ -11,7 +11,6 @@ from app.agents.workers.hotel import HotelWorker
 from app.agents.workers.transport import TransportWorker
 from app.agents.workers.weather import WeatherWorker
 from app.schemas.planning import CandidateOption, Evidence, ResearchTask, TravelRequirement, WorkerResult
-from app.schemas.planning import BudgetSummary
 from app.agents.supervisor import assemble_draft
 
 
@@ -72,7 +71,7 @@ def test_supervisor_assembly_preserves_mock_evidence_and_warnings():
         ),
     ]
 
-    draft = assemble_draft(make_requirement(), results, [], BudgetSummary())
+    draft = assemble_draft(make_requirement(), results, [])
 
     assert draft.evidence == [evidence]
     assert draft.warnings == ["Local mock data."]

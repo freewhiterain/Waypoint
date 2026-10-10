@@ -39,21 +39,11 @@ async def test_resolve_preference_defaults_ignores_keys_outside_vocabulary():
 async def test_resolve_preference_defaults_ignores_type_mismatched_values():
     repo = InMemoryPreferenceRepository()
     await repo.upsert(PreferenceRecord(user_id="u1", key="food_preferences", value="清淡"))
-    await repo.upsert(PreferenceRecord(user_id="u1", key="budget", value="很多钱"))
 
     defaults = await resolve_preference_defaults("u1", repo)
 
     assert defaults == {}
 
-
-@pytest.mark.asyncio
-async def test_resolve_preference_defaults_accepts_valid_budget_number():
-    repo = InMemoryPreferenceRepository()
-    await repo.upsert(PreferenceRecord(user_id="u1", key="budget", value=3000))
-
-    defaults = await resolve_preference_defaults("u1", repo)
-
-    assert defaults["budget"] == 3000.0
 
 
 def test_apply_preference_defaults_fills_only_empty_fields():
@@ -61,23 +51,13 @@ def test_apply_preference_defaults_fills_only_empty_fields():
     defaults = {
         "food_preferences": ["清淡", "不吃辣"],
         "accommodation_preferences": ["经济型"],
-        "budget": 3000.0,
     }
 
     result = apply_preference_defaults(requirement, defaults)
 
     assert result.food_preferences == ["微辣"]
     assert result.accommodation_preferences == ["经济型"]
-    assert result.budget == 3000.0
 
-
-def test_apply_preference_defaults_never_overrides_explicit_budget():
-    requirement = _requirement(budget=1000)
-    defaults = {"budget": 5000.0}
-
-    result = apply_preference_defaults(requirement, defaults)
-
-    assert result.budget == 1000
 
 
 def test_apply_preference_defaults_returns_equivalent_requirement_when_no_defaults_apply():

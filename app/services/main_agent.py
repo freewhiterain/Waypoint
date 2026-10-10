@@ -167,7 +167,7 @@ class MainAgentService:
         """返回 (表单预填值, 需求上下文)。
 
         表单只认目的地/日期/天数，前端按 initial_values 原样回填，所以这里不往里加字段；
-        人数、预算、偏好另放进需求上下文，表单提交时由后端合并。只写用户明确说过的值，
+        人数、偏好另放进需求上下文，表单提交时由后端合并。只写用户明确说过的值，
         默认值（1 个大人、0 个孩子、空列表）不写，避免把"没说"伪装成"说了"。
         """
         draft = await RequirementExtractor().extract(message, use_llm=False)
@@ -178,7 +178,7 @@ class MainAgentService:
         )
         context = draft.model_dump(
             mode="json",
-            include={"origin", "budget", "styles", "special_needs", "food_preferences"},
+            include={"origin", "styles", "special_needs", "food_preferences"},
             exclude_none=True,
         )
         context = {key: value for key, value in context.items() if value != []}
