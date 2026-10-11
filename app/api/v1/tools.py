@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from app.agents import factory as agent_factory
 from app.api.dependencies import get_current_user
+from app.api.sse import SSEEventBuilder, sse
 from app.core.checkpointer import get_checkpointer
 from app.governance.drafts import PostgresDraftRepository, save_trip_draft
 from app.governance.events import PublishingEventRepository, TaskEventService, task_event_to_sse_event
@@ -37,10 +38,6 @@ async def run_travel_planning(*args, **kwargs):
 
 class ProcessingLeaseLostError(RuntimeError):
     pass
-
-
-def sse(data: dict) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 async def save_assistant_message(conversation_id: str, content: str, extra_info: dict) -> None:
@@ -118,18 +115,7 @@ async def cancel_and_await_task(task: asyncio.Task | None) -> None:
 
 
 async def existing_completion_stream(call_id: str, conversation_id: str, result: dict | None):
-    sequence = 0
-
-    def event(event_type: str, payload: dict | None = None) -> dict:
-        nonlocal sequence
-        sequence += 1
-        return SSEEvent(
-            type=event_type,
-            task_id=call_id,
-            conversation_id=conversation_id,
-            sequence=sequence,
-            payload=payload or {},
-        ).legacy_payload()
+    event = SSEEventBuilder(call_id, conversation_id)
 
     durable = result if isinstance(result, dict) else {}
     task_id = durable.get("task_id", call_id)
@@ -148,18 +134,7 @@ async def existing_completion_stream(call_id: str, conversation_id: str, result:
 
 
 async def processing_stream(call_id: str, conversation_id: str):
-    sequence = 0
-
-    def event(event_type: str, payload: dict | None = None) -> dict:
-        nonlocal sequence
-        sequence += 1
-        return SSEEvent(
-            type=event_type,
-            task_id=call_id,
-            conversation_id=conversation_id,
-            sequence=sequence,
-            payload=payload or {},
-        ).legacy_payload()
+    event = SSEEventBuilder(call_id, conversation_id)
 
     yield sse(
         event(
@@ -175,23 +150,10 @@ async def processing_stream(call_id: str, conversation_id: str):
 
 
 async def tool_result_stream(call_id: str, data: ToolResultRequest, user_id: str, record):
-    sequence = 0
-
-    def event(event_type: str, payload: dict | None = None) -> dict:
-        nonlocal sequence
-        sequence += 1
-        return SSEEvent(
-            type=event_type,
-            task_id=call_id,
-            conversation_id=record.conversation_id,
-            sequence=sequence,
-            payload=payload or {},
-        ).legacy_payload()
+    event = SSEEventBuilder(call_id, record.conversation_id)
 
     def research_event_frame(research_event: SSEEvent) -> str:
-        nonlocal sequence
-        sequence += 1
-        research_event.sequence = sequence
+        research_event.sequence = event.next_sequence()
         return sse(research_event.legacy_payload())
 
     claim_version = None

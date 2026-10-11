@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.api.sse import SSEEventBuilder, sse
 from app.agents.agent_tools import run_agent_tool
 from app.governance.drafts import load_trip_draft_context
 from app.governance.tool_invocations import PostgresToolInvocationRepository, ToolInvocationRecord
@@ -18,7 +19,6 @@ from app.models.base import async_session_maker, get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.user import User
-from app.schemas.events import SSEEvent
 from app.schemas.message import MessageCreate
 from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
@@ -49,10 +49,6 @@ async def save_message(
     await db.commit()
     await db.refresh(message)
     return message
-
-
-def sse(data: dict) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _public_error(exc: Exception) -> dict:
@@ -103,18 +99,7 @@ async def generate_sse_stream(
 ):
     """Save one user turn, decide once, and stream its explicit action."""
     task_id = uuid4().hex
-    sequence = 0
-
-    def event(event_type: str, payload: dict | None = None) -> dict:
-        nonlocal sequence
-        sequence += 1
-        return SSEEvent(
-            type=event_type,
-            task_id=task_id,
-            conversation_id=conversation_id,
-            sequence=sequence,
-            payload=payload or {},
-        ).legacy_payload()
+    event = SSEEventBuilder(task_id, conversation_id)
 
     try:
         async with async_session_maker() as db:
