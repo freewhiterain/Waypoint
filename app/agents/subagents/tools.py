@@ -254,8 +254,8 @@ async def build_subagent_tools(
 
     if "weather_fallback_api" in canonical.allowed_tools:
         if weather_adapter is None and settings.enable_external_tools:
-            from app.mcp_core.adapters.weather import AmapWeatherAdapter
-            weather_adapter = AmapWeatherAdapter()
+            from app.mcp_core.adapters.weather import CombinedWeatherAdapter
+            weather_adapter = CombinedWeatherAdapter()
 
         if weather_adapter is not None:
             async def invoke_weather(payload: Mapping[str, Any]) -> Any:
