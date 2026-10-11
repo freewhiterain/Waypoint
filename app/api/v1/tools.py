@@ -24,6 +24,7 @@ from app.schemas.planning import TravelRequirement
 from app.schemas.tools import ToolResultRequest
 from app.services.open_qa import answer_open_question
 from app.services.planning import render_plan_markdown
+from app.services.slots import PostgresSlotRepository, confirm_slots
 from app.utils.logger import app_logger
 
 
@@ -219,6 +220,7 @@ async def tool_result_stream(call_id: str, data: ToolResultRequest, user_id: str
         claim_version = claim.claim_version
         record = claim.record
         requirement = build_requirement(data.result.model_dump(), record.arguments)
+        await confirm_slots(PostgresSlotRepository(), record.conversation_id, data.result.model_dump())
         research_events: asyncio.Queue[SSEEvent] = asyncio.Queue()
 
         async def publish_research_event(task_event):

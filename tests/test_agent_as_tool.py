@@ -245,7 +245,7 @@ class StreamSession:
 
 
 class DecisionAgent:
-    async def decide(self, _message, _context):
+    async def decide(self, _message, _context, _slots=None):
         return MainAgentDecision(
             action="invoke_agent_tool",
             reason="deep research",
@@ -370,7 +370,7 @@ async def test_agent_tool_action_without_a_tool_call_falls_back_to_direct_respon
             return False
 
     class BrokenDecisionAgent:
-        async def decide(self, _message, _context):
+        async def decide(self, _message, _context, _slots=None):
             return MainAgentDecision(action="invoke_agent_tool", reason="missing tool call")
 
     async def unexpected_tool(_call):

@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.planning import TaskType, WorkerStatus
+from app.schemas.slots import SlotUpdate
 
 
 MainAgentAction = Literal[
@@ -55,10 +56,8 @@ class MainAgentDecision(BaseModel):
     action: MainAgentAction
     reason: str
     response: str | None = None
-    initial_values: dict[str, Any] = Field(default_factory=dict)
-    # 表单只问目的地/日期/天数；人数、偏好从用户原话里提取后存在这里，
-    # 表单提交时由后端并进 TravelRequirement，不经过前端。
-    requirement_context: dict[str, Any] = Field(default_factory=dict)
+    # 这一轮识别出的槽位变化。chat 层把它并进会话槽位，再由代码决定走哪条线路。
+    slot_update: SlotUpdate = Field(default_factory=SlotUpdate)
     tool_call: AgentToolCall | None = None
 
 

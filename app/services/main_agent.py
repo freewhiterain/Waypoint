@@ -1,12 +1,21 @@
-"""Per-turn routing for the conversational travel entry point."""
+"""Per-turn understanding for the conversational travel entry point.
+
+每一轮由同一次 LLM 调用给出"意图 + 槽位变化"（TurnUnderstanding）。走哪条线路
+不在这里决定：chat 层把槽位变化并进会话槽位后，按固定规则路由。
+
+LLM 没配置或这一轮没按要求返回时，退回关键词规则和正则提取，保证对话不中断。
+"""
 
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from app.config import settings
+from app.schemas.slots import SlotUpdate, TripSlots, TurnUnderstanding
 from app.schemas.tools import AgentToolArguments, AgentToolCall, MainAgentDecision
+from app.utils.logger import app_logger
 from app.services.planning import KNOWN_DESTINATIONS, RequirementExtractor
 
 
@@ -41,6 +50,7 @@ _AGENT_TOOL_WORKER_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("food", ("\u7f8e\u98df", "\u5403", "\u9910\u5385", "\u5c0f\u5403", "\u83dc")),
 )
 _PROACTIVE_OFFER = "需要我帮你规划一下旅行吗"
+_UNDERSTAND_ATTEMPTS = 2
 # 与 app/api/v1/conversations.py 写入的 extra_info["kind"] 对应，
 # 由 chat._load_recent_context 带进 context。
 _OFFER_KIND = "conversation_offer"
@@ -50,34 +60,99 @@ class MainAgentService:
     def __init__(self, use_llm: bool | None = None) -> None:
         self.use_llm = use_llm
 
-    async def decide(self, message: str, context: list[dict[str, Any]]) -> MainAgentDecision:
+    async def decide(
+        self,
+        message: str,
+        context: list[dict[str, Any]],
+        slots: TripSlots | None = None,
+    ) -> MainAgentDecision:
         text = message.strip()
+        slots = slots or TripSlots()
+        if self._llm_enabled():
+            understanding = await self._understand(text, context, slots)
+            if understanding is not None:
+                return self._decision_from_understanding(text, understanding, slots)
+        return await self._decide_by_rules(text, context)
+
+    async def _decide_by_rules(self, text: str, context: list[dict[str, Any]]) -> MainAgentDecision:
+        """LLM 不可用时的兜底：关键词判断意图，正则提取槽位（只看当前这一条消息）。"""
         normalized = self._normalize(text)
+        slot_update = await self._slot_update_by_rules(text)
 
         if self._is_explicit_planning_request(normalized):
-            initial_values, requirement_context = await self._prefill(text)
             return MainAgentDecision(
                 action="collect_trip_requirements",
                 reason="用户明确请求规划",
-                initial_values=initial_values,
-                requirement_context=requirement_context,
+                slot_update=slot_update,
             )
         agent_tool_call = self._build_agent_tool_call(text, normalized)
         if agent_tool_call is not None:
             return MainAgentDecision(
                 action="invoke_agent_tool",
-                reason="\u7528\u6237\u8bf7\u6c42\u5bf9\u7279\u5b9a\u9886\u57df\u8fdb\u884c\u6df1\u5165\u7814\u7a76",
+                reason="用户请求对特定领域进行深入研究",
                 tool_call=agent_tool_call,
+                slot_update=slot_update,
             )
         if self._is_destination_recommendation(normalized):
-            return MainAgentDecision(action="recommend_destination", reason="用户请求目的地推荐")
+            return MainAgentDecision(
+                action="recommend_destination", reason="用户请求目的地推荐", slot_update=slot_update
+            )
         if self._is_open_question(normalized):
-            return MainAgentDecision(action="answer_open_question", reason="用户提出开放式旅行问题")
+            return MainAgentDecision(
+                action="answer_open_question", reason="用户提出开放式旅行问题", slot_update=slot_update
+            )
         if normalized in _AFFIRMATIONS and self._has_recent_proactive_offer(context):
             return MainAgentDecision(action="collect_trip_requirements", reason="用户确认主动邀请")
-        if self._llm_enabled():
-            return await self._decide_with_llm(text, context)
-        return MainAgentDecision(action="direct_response", reason="未识别到明确的规划意图")
+        return MainAgentDecision(
+            action="direct_response", reason="未识别到明确的规划意图", slot_update=slot_update
+        )
+
+    def _decision_from_understanding(
+        self,
+        text: str,
+        understanding: TurnUnderstanding,
+        slots: TripSlots,
+    ) -> MainAgentDecision:
+        update = understanding.slots
+        if understanding.intent == "plan":
+            return MainAgentDecision(
+                action="collect_trip_requirements", reason="模型判断用户要规划行程", slot_update=update
+            )
+        if understanding.intent == "research":
+            destination = (update.destination or slots.destination or "").strip()
+            if destination:
+                worker = understanding.research_topic or "attractions"
+                return MainAgentDecision(
+                    action="invoke_agent_tool",
+                    reason="模型判断用户要研究某个方面",
+                    tool_call=AgentToolCall(
+                        name=f"research_{worker}",
+                        arguments=AgentToolArguments(
+                            destination=destination,
+                            query=text[:500],
+                            research_mode="deep" if understanding.deep_research else "normal",
+                        ),
+                    ),
+                    slot_update=update,
+                )
+            # 没有目的地就没法做定向研究，按开放问题回答。
+            return MainAgentDecision(
+                action="answer_open_question", reason="研究请求缺少目的地", slot_update=update
+            )
+        if understanding.intent == "recommend_destination":
+            return MainAgentDecision(
+                action="recommend_destination", reason="模型判断用户想要目的地推荐", slot_update=update
+            )
+        if understanding.intent == "open_question":
+            return MainAgentDecision(
+                action="answer_open_question", reason="模型判断用户在询问旅行信息", slot_update=update
+            )
+        return MainAgentDecision(
+            action="direct_response",
+            reason="模型判断为闲聊或与旅行无关",
+            response=understanding.reply,
+            slot_update=update,
+        )
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -163,73 +238,78 @@ class MainAgentService:
     def _llm_enabled(self) -> bool:
         return self.use_llm is not False and bool(settings.llm_api_key)
 
-    async def _prefill(self, message: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        """返回 (表单预填值, 需求上下文)。
-
-        表单只认目的地/日期/天数，前端按 initial_values 原样回填，所以这里不往里加字段；
-        人数、偏好另放进需求上下文，表单提交时由后端合并。只写用户明确说过的值，
-        默认值（1 个大人、0 个孩子、空列表）不写，避免把"没说"伪装成"说了"。
-        """
+    async def _slot_update_by_rules(self, message: str) -> SlotUpdate:
+        """正则提取当前消息里的槽位。默认值（1 个大人、0 个孩子）不算"用户说过"。"""
         draft = await RequirementExtractor().extract(message, use_llm=False)
-        initial_values = draft.model_dump(
-            mode="json",
-            include={"destination", "departure_date", "days"},
-            exclude_none=True,
+        party_stated = draft.adults != 1 or draft.children != 0
+        return SlotUpdate(
+            destination=draft.destination,
+            departure_date=draft.departure_date.isoformat() if draft.departure_date else None,
+            days=draft.days,
+            origin=draft.origin,
+            adults=draft.adults if party_stated else None,
+            children=draft.children if party_stated else None,
+            styles=draft.styles,
+            food_preferences=draft.food_preferences,
         )
-        context = draft.model_dump(
-            mode="json",
-            include={"origin", "styles", "special_needs", "food_preferences"},
-            exclude_none=True,
-        )
-        context = {key: value for key, value in context.items() if value != []}
-        if draft.adults != 1 or draft.children != 0:
-            context["adults"] = draft.adults
-            context["children"] = draft.children
-        return initial_values, context
 
     @staticmethod
     def _mentions_known_destination(text: str) -> bool:
         return any(destination in text for destination in KNOWN_DESTINATIONS)
 
-    async def _decide_with_llm(
+    async def _understand(
         self,
         message: str,
         context: list[dict[str, Any]],
-    ) -> MainAgentDecision:
-        try:
-            from app.agents.llm import get_llm
-
-            structured = get_llm().with_structured_output(MainAgentDecision)
-            decision = MainAgentDecision.model_validate(
-                await structured.ainvoke(
-                    [
-                        {
-                            "role": "system",
-                            "content": (
-                                "你是旅行对话入口路由器。只根据本轮用户消息判断 action。"
-                                "历史中的目的地、日期、天数和工具结果不得用来推断用户想规划。"
-                                "只有用户当前明确要规划时才返回 collect_trip_requirements。"
-                                "开放式提问返回 answer_open_question，目的地推荐返回 recommend_destination，"
-                                "其他情况返回 direct_response。"
-                            ),
-                        },
-                        {"role": "assistant", "content": f"最近上下文：{json.dumps(context, ensure_ascii=False)}"},
-                        {"role": "user", "content": message},
-                    ]
-                )
-            )
-        except Exception:
-            return MainAgentDecision(action="direct_response", reason="路由模型不可用，保守地直接回复")
-
-        if decision.action == "invoke_agent_tool" and decision.tool_call is None:
-            return MainAgentDecision(
-                action="direct_response",
-                reason="路由模型未提供有效的工具调用参数",
-            )
-
-        if decision.action != "collect_trip_requirements":
-            return decision.model_copy(update={"initial_values": {}, "requirement_context": {}})
-        initial_values, requirement_context = await self._prefill(message)
-        return decision.model_copy(
-            update={"initial_values": initial_values, "requirement_context": requirement_context}
+        slots: TripSlots,
+    ) -> TurnUnderstanding | None:
+        """一次 LLM 调用同时给出意图和槽位变化；失败或返回空时返回 None，由规则兜底。"""
+        today = date.today()
+        weekday = "一二三四五六日"[today.weekday()]
+        system_prompt = "\n".join(
+            [
+                f"你是旅行助手的对话理解模块，以 JSON 格式输出。今天是 {today.isoformat()}（周{weekday}）。",
+                "任务：判断用户这一轮消息的意图（intent），并找出这一轮里新出现或被修改的行程信息（slots）。",
+                "填写 slots 的规则：",
+                "1. 只填用户这一轮明确表达的信息；没提到的留空，不要重复已有槽位，不要猜测。",
+                "2. destination：用户确定要去、或只围绕这一个城市提问时填；在多个城市之间比较、还没决定时留空。",
+                "3. 当前槽位里的 suggested_destinations 是助手之前推荐的候选城市。用户表示接受"
+                "（比如说就去那里、那帮我规划一下，或明确指了其中一个）时，把对应城市填入 destination；"
+                "有多个候选而用户没有指明是哪个时留空。",
+                "4. departure_date 换算成 YYYY-MM-DD：明天、下周六这类说法按今天换算；"
+                "国庆、春节等节假日，或只说了月份的，不换算，留空。",
+                "5. 用户说不喜欢某样东西、不要某样东西时，不要把它记进 styles。",
+                "6. 两个人、我和女朋友是 adults=2；一家三口是 adults=2、children=1。",
+                "7. 用户说放 N 天假、有 N 天假期或有 N 天时间，就是打算玩 N 天，填 days=N。",
+                "intent 只看用户这一轮想做什么：",
+                "- plan：用户这一轮明确要求规划、安排行程或做攻略。",
+                "- 用户只是补充或修改信息（去哪、哪天、几个人、喜好）而没有要求规划时，不是 plan：用 chat，"
+                "在 reply 里简短确认已记下，并问一句是否现在开始规划。slots 照常填写。",
+                "- 例外：最近对话里助手上一条是“正在收集旅行需求。”，说明规划表单还没填完，"
+                "用户这一轮补充信息视为继续规划，用 plan。",
+                "- 用户问的内容与旅行无关时用 chat，并在 reply 里礼貌说明只能帮忙处理旅行相关的事。",
+            ]
         )
+        user_prompt = "\n".join(
+            [
+                f"当前槽位：{slots.model_dump_json(exclude_defaults=True)}",
+                f"最近对话：{json.dumps(context, ensure_ascii=False)}",
+                f"用户这一轮：{message}",
+            ]
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        # 强制工具调用下模型偶尔仍会返回空结果，重试一次；还不行再交给规则兜底。
+        for attempt in range(_UNDERSTAND_ATTEMPTS):
+            try:
+                from app.agents.llm import get_llm
+
+                structured = get_llm().with_structured_output(TurnUnderstanding)
+                return TurnUnderstanding.model_validate(await structured.ainvoke(messages))
+            except Exception as exc:
+                app_logger.warning(
+                    f"对话理解模型未返回有效结果（第 {attempt + 1} 次）: {type(exc).__name__}: {exc}"
+                )
+        return None

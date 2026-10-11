@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.api.v1 import chat
+from app.schemas.slots import SlotUpdate
 from app.schemas.tools import MainAgentDecision
 
 
@@ -89,7 +90,7 @@ class DecisionAgent:
         self.decision = decision
         self.calls = []
 
-    async def decide(self, message, context):
+    async def decide(self, message, context, slots=None):
         self.calls.append((message, context))
         return self.decision
 
@@ -108,11 +109,11 @@ def session_factory(session):
     return factory
 
 
-async def stream_events():
+async def stream_events(message="message"):
     return [
         json.loads(frame.removeprefix("data: ").strip())
         async for frame in chat.generate_sse_stream(
-            str(uuid.uuid4()), "message", str(uuid.uuid4())
+            str(uuid.uuid4()), message, str(uuid.uuid4())
         )
     ]
 
@@ -148,7 +149,6 @@ async def test_affirmation_persists_one_form_call_and_emits_tool_call(monkeypatc
         MainAgentDecision(
             action="collect_trip_requirements",
             reason="affirmed proactive offer",
-            initial_values={},
         ),
         history=[{"role": "assistant", "content": "Need help planning a trip?"}],
     )
@@ -178,13 +178,14 @@ async def test_direct_planning_prepopulates_destination_without_supervisor(monke
         MainAgentDecision(
             action="collect_trip_requirements",
             reason="explicit planning request",
-            initial_values={"destination": "Chengdu"},
+            slot_update=SlotUpdate(destination="Chengdu", days=3),
         ),
     )
 
-    events = await stream_events()
+    events = await stream_events("plan a trip to Chengdu")
 
     assert events[0]["type"] == "tool_call"
+    # 目的地在用户原话里，填入；天数在原话里找不到依据，被丢弃，留给表单去问。
     assert events[0]["arguments"] == {"initial_values": {"destination": "Chengdu"}}
     record = session.persisted_invocations[0]
     assert record.arguments == events[0]["arguments"]
@@ -280,7 +281,7 @@ async def test_collect_form_rolls_back_invocation_and_assistant_metadata_on_fail
         MainAgentDecision(
             action="collect_trip_requirements",
             reason="explicit planning request",
-            initial_values={"destination": "Chengdu"},
+            slot_update=SlotUpdate(destination="Chengdu", days=3),
         ),
         fail_assistant_add=True,
     )

@@ -56,17 +56,18 @@ async def test_planning_request_keeps_form_prefill_unchanged_and_adds_context():
     decision = await MainAgentService(use_llm=False).decide(MESSAGE, [])
 
     assert decision.action == "collect_trip_requirements"
-    # 前端按 initial_values 回填表单，这里不能混进表单没有的字段。
-    assert decision.initial_values == {"destination": "成都", "days": 3}
-    assert decision.requirement_context["adults"] == 2
-    assert {"美食", "熊猫"} <= set(decision.requirement_context["styles"])
+    update = decision.slot_update
+    assert (update.destination, update.days, update.adults) == ("成都", 3, 2)
+    assert {"美食", "熊猫"} <= set(update.styles)
 
 
 @pytest.mark.asyncio
 async def test_request_without_extra_details_has_empty_context():
     decision = await MainAgentService(use_llm=False).decide("帮我规划一次成都旅行", [])
 
-    assert decision.requirement_context == {}
+    update = decision.slot_update
+    # 没说人数时不把默认的 1 个大人当成用户说过的。
+    assert update.adults is None and update.children is None and update.styles == []
 
 
 def test_form_values_override_context_and_bad_context_falls_back_to_form():

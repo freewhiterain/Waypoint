@@ -16,8 +16,9 @@ from app.agents import llm as llm_module
 
 
 @pytest.fixture(autouse=True)
-def _reset_shared_clients():
-    """每个用例前后都清空缓存，避免相互污染。"""
+def _reset_shared_clients(monkeypatch):
+    """每个用例前后都清空缓存，避免相互污染。构造客户端需要 Key，给一个假的即可。"""
+    monkeypatch.setattr("app.config.settings.llm_api_key", "test-key")
     llm_module.reset_http_clients()
     yield
     llm_module.reset_http_clients()

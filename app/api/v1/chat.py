@@ -22,6 +22,14 @@ from app.models.user import User
 from app.schemas.message import MessageCreate
 from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
+from app.services.planning import KNOWN_DESTINATIONS
+from app.services.slots import (
+    PostgresSlotRepository,
+    apply_slot_update,
+    load_slots,
+    remember_suggestions,
+    store_slots,
+)
 from app.services.open_qa import answer_open_question
 from app.utils.logger import app_logger
 
@@ -96,8 +104,15 @@ async def generate_sse_stream(
     user_id: str,
     registry=None,
     draft_repository=None,
+    slot_repository=None,
 ):
-    """Save one user turn, decide once, and stream its explicit action."""
+    """Save one user turn, understand it once, update slots, and stream its action.
+
+    模型只给出"意图 + 槽位变化"。槽位并进会话状态后，由这里的固定规则决定走哪条线路：
+    想规划就发出表单工具调用，预填已有的槽位——表单只问缺的项，三项都齐时由前端
+    显示确认。规划本身只有在表单（或确认）提交、三个槽都有值之后才会开始。
+    """
+    slot_repository = slot_repository or PostgresSlotRepository()
     task_id = uuid4().hex
     event = SSEEventBuilder(task_id, conversation_id)
 
@@ -127,13 +142,20 @@ async def generate_sse_stream(
                     }
                 )
 
-        decision = await MainAgentService().decide(user_message, context)
+        slots = await load_slots(slot_repository, conversation_id)
+        decision = await MainAgentService().decide(user_message, context, slots)
+        # 填槽每一轮都做，与这一轮走哪条线路无关。
+        slots, dropped = apply_slot_update(slots, decision.slot_update, user_text=user_message)
+        if dropped:
+            app_logger.info(f"槽位更新缺少依据，已丢弃: {dropped}")
+        await store_slots(slot_repository, conversation_id, slots)
 
         if decision.action == "collect_trip_requirements":
             call_id = uuid4().hex
-            arguments: dict[str, Any] = {"initial_values": decision.initial_values}
-            if decision.requirement_context:
-                arguments["requirement_context"] = decision.requirement_context
+            arguments: dict[str, Any] = {"initial_values": slots.form_values()}
+            requirement_context = slots.requirement_context()
+            if requirement_context:
+                arguments["requirement_context"] = requirement_context
             payload = ToolCallPayload(
                 call_id=call_id,
                 tool="collect_trip_requirements",
@@ -203,6 +225,10 @@ async def generate_sse_stream(
 
         if decision.action in {"answer_open_question", "recommend_destination"}:
             answer = await answer_open_question(user_message)
+            if decision.action == "recommend_destination":
+                # 推荐到的城市只是候选，用户接受之后才会填进目的地。
+                slots = remember_suggestions(slots, answer, KNOWN_DESTINATIONS)
+                await store_slots(slot_repository, conversation_id, slots)
             async with async_session_maker() as db:
                 await save_message(
                     db,
