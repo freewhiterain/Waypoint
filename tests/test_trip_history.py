@@ -83,3 +83,32 @@ async def test_record_trip_history_from_itinerary_degrades_to_none_on_malformed_
 
     assert result is None
     assert await repository.list("u1") == []
+
+
+def test_afternoon_attractions_are_recorded_and_placeholders_are_not():
+    content = _content(itinerary=[
+        {"day": 1, "date": "2026-08-01", "slots": [
+            {"period": "morning", "title": "熊猫基地"},
+            {"period": "afternoon", "title": "宽窄巷子"},
+            {"period": "evening", "title": "火锅店"},
+        ]},
+        {"day": 2, "date": "2026-08-02", "slots": [
+            {"period": "morning", "title": "成都分区自由活动"},
+            {"period": "afternoon", "title": "自由活动"},
+            {"period": "evening", "title": "自由安排晚餐"},
+        ]},
+    ])
+
+    assert build_trip_history_record("u1", "itin-1", content).visited_attractions == ["熊猫基地", "宽窄巷子"]
+
+
+def test_attraction_candidates_decide_what_counts_when_titles_were_reworded():
+    content = _content(
+        itinerary=[{"day": 1, "date": "2026-08-01", "slots": [
+            {"period": "morning", "title": "漫步武侯祠"},
+            {"period": "afternoon", "title": "酒店休息"},
+        ]}],
+        worker_results=[{"worker": "attractions", "options": [{"name": "武侯祠"}, {"name": "锦里"}]}],
+    )
+
+    assert build_trip_history_record("u1", "itin-1", content).visited_attractions == ["武侯祠"]

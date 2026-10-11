@@ -27,15 +27,33 @@ class InMemoryTripHistoryRepository:
         return [record.model_copy(deep=True) for record in self.records if record.user_id == user_id]
 
 
+_PLACEHOLDER_TITLES = ("自由活动", "自由安排")
+
+
 def _extract_visited_attractions(content: dict[str, Any]) -> list[str]:
-    # 只取 morning 时段：行程编排（app/agents/itinerary_planner.py）当初固定把景点名放在
-    # morning 时段、把餐厅名放在 evening 时段（afternoon 是通用占位符，不含真实标题）。
-    # 如果这个编排约定以后变了，这里需要跟着调整，否则会漏景点或把餐厅名误记成景点。
+    """上午、下午时段里安排的景点。晚上是餐饮，不算；"自由活动"这类占位标题也不算。
+
+    行程里带着景点候选（worker_results）时，以候选名称为准：润色后的标题可能加了修饰语，
+    但会保留地点名称。
+    """
+    known = [
+        str(option.get("name"))
+        for result in content.get("worker_results", []) or []
+        if result.get("worker") == "attractions"
+        for option in result.get("options", []) or []
+        if option.get("name")
+    ]
     attractions: list[str] = []
     for day in content.get("itinerary", []) or []:
         for slot in day.get("slots", []) or []:
-            if slot.get("period") == "morning" and slot.get("title"):
-                attractions.append(slot["title"])
+            title = str(slot.get("title") or "").strip()
+            if slot.get("period") not in ("morning", "afternoon") or not title:
+                continue
+            if any(marker in title for marker in _PLACEHOLDER_TITLES):
+                continue
+            name = next((item for item in known if item in title), None) if known else title
+            if name and name not in attractions:
+                attractions.append(name)
     return attractions
 
 
