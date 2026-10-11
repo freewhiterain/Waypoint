@@ -1,7 +1,7 @@
 """
 消息相关的 Pydantic 模型
 """
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -10,6 +10,13 @@ import uuid
 class MessageCreate(BaseModel):
     """创建消息"""
     content: str
+
+    @field_validator("content")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("消息内容不能为空")
+        return value
 
 
 class MessageResponse(BaseModel):

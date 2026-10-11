@@ -1,7 +1,9 @@
 """
 API 依赖项
 """
-from fastapi import Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, Path, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,6 +13,11 @@ from app.utils.security import decode_access_token
 
 
 security = HTTPBearer()
+
+# 路径里的会话 id：不是 UUID 时直接返回 422，不让它走到数据库报错。
+ConversationId = Annotated[
+    str, Path(pattern=r"^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
+]
 
 
 async def get_current_user(

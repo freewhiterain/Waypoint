@@ -10,7 +10,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.schemas.conversation import ConversationCreate, ConversationUpdate, ConversationResponse
 from app.schemas.message import MessageResponse
-from app.api.dependencies import get_current_user
+from app.api.dependencies import ConversationId, get_current_user
 
 
 router = APIRouter(prefix="/conversations", tags=["会话管理"])
@@ -76,7 +76,7 @@ async def list_conversations(
 
 @router.get("/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
-    conversation_id: str,
+    conversation_id: ConversationId,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -101,7 +101,7 @@ async def get_conversation(
 
 @router.patch("/{conversation_id}", response_model=ConversationResponse)
 async def update_conversation(
-    conversation_id: str,
+    conversation_id: ConversationId,
     data: ConversationUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -136,7 +136,7 @@ async def update_conversation(
 
 @router.delete("/{conversation_id}")
 async def delete_conversation(
-    conversation_id: str,
+    conversation_id: ConversationId,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):

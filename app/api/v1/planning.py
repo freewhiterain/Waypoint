@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import factory as agent_factory
-from app.api.dependencies import get_current_user
+from app.api.dependencies import ConversationId, get_current_user
 from app.core.checkpointer import get_checkpointer
 from app.governance.approvals import ApprovalService
 from app.governance.drafts import PostgresDraftRepository, save_trip_draft
@@ -109,7 +109,7 @@ async def get_planning_task(task_id: str, user: User = Depends(get_current_user)
 
 @router.get("/drafts/{conversation_id}")
 async def get_trip_draft(
-    conversation_id: str,
+    conversation_id: ConversationId,
     user: User = Depends(get_current_user),
 ):
     record = await PostgresDraftRepository().get(str(user.id), conversation_id)
@@ -136,7 +136,7 @@ async def propose_preference(data: PreferenceProposalRequest, user: User = Depen
 
 @router.post("/itineraries/{conversation_id}/save")
 async def request_itinerary_save(
-    conversation_id: str,
+    conversation_id: ConversationId,
     data: ItinerarySaveRequest,
     user: User = Depends(get_current_user),
 ):
@@ -151,7 +151,7 @@ async def request_itinerary_save(
 
 
 @router.get("/itineraries/{conversation_id}")
-async def get_saved_itinerary(conversation_id: str, user: User = Depends(get_current_user)):
+async def get_saved_itinerary(conversation_id: ConversationId, user: User = Depends(get_current_user)):
     record = await PostgresItineraryRepository().get(str(user.id), conversation_id)
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="正式行程不存在")

@@ -202,3 +202,11 @@ async def test_slot_storage_failure_does_not_break_the_turn(monkeypatch):
 
     assert events[0]["type"] == "tool_call"
     assert events[0]["arguments"] == {"initial_values": {"destination": "成都"}}
+
+
+def test_english_day_count_is_accepted_as_a_days_cue():
+    slots, dropped = apply_slot_update(
+        TripSlots(), SlotUpdate(days=3), user_text="Plan a 3-day trip to Chengdu for me"
+    )
+
+    assert slots.days == 3 and dropped == []

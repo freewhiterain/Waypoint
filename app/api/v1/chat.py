@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import ConversationId, get_current_user
 from app.config import settings
 from app.api.sse import SSEEventBuilder, sse
 from app.agents.agent_tools import run_agent_tool
@@ -350,7 +350,7 @@ async def generate_sse_stream(
 
 @router.post("/stream/{conversation_id}")
 async def stream_chat(
-    conversation_id: str,
+    conversation_id: ConversationId,
     data: MessageCreate,
     request: Request = None,
     user: User = Depends(get_current_user),
@@ -387,7 +387,7 @@ async def stream_chat(
 
 @router.get("/history/{conversation_id}")
 async def get_chat_history(
-    conversation_id: str,
+    conversation_id: ConversationId,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
