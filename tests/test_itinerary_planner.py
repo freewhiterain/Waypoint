@@ -146,7 +146,7 @@ def weather_result(*days):
     from app.schemas.planning import Evidence
 
     evidence = [
-        Evidence(id=f"w{index}", content=f"成都 {day}：白天{sky} 20℃；夜间多云 15℃", source="高德开放平台天气服务",
+        Evidence(id=f"w{index}", content=f"成都 {day}：{sky} 15~20℃", source="高德开放平台天气服务",
                  metadata={"provider": "amap"})
         for index, (day, sky) in enumerate(days)
     ]
@@ -162,8 +162,8 @@ async def test_weather_evidence_reaches_the_selection_prompt_and_the_day_notes()
     itinerary, _warnings = await plan_itinerary(requirement(days=2), results, llm=llm)
 
     # 只带上行程覆盖到的日期；出发前一天的预报不出现。
-    assert '"weather": ["第1天：白天小雨 20℃；夜间多云 15℃"]' in llm.prompts[0]
-    assert itinerary[0].notes[0] == "天气：白天小雨 20℃；夜间多云 15℃"
+    assert '"weather": ["第1天：小雨 15~20℃"]' in llm.prompts[0]
+    assert itinerary[0].notes[0] == "天气：小雨 15~20℃"
     assert not any(note.startswith("天气：") for note in itinerary[1].notes)
 
 

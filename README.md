@@ -145,8 +145,8 @@ planner → dispatch ⇄ run_worker → route_planner → synthesize
 ### 数据来源
 
 - **本地资料**：`data/documents/` 下的 Markdown，目前只有成都有完整资料，而且是开发用的模拟数据（结果里 `is_mock=True`）。其他城市没有景点资料，行程里会是"自由活动"。
-- **高德**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `AMAP_API_KEY`）：当天起 4 天的天气预报、地点之间的驾车耗时和距离。
-- **Open-Meteo**（需要 `ENABLE_EXTERNAL_TOOLS=true`，不需要 Key）：把天气预报补到 16 天。重叠的日期用高德的，之后的日期用它的；带降水概率。免费版仅限非商业用途。16 天之外查不到天气，行程里不显示。
+- **Open-Meteo**（需要 `ENABLE_EXTERNAL_TOOLS=true`，不需要 Key）：天气预报，当天起 16 天，带降水概率。免费版仅限非商业用途。16 天之外查不到天气，行程里不显示。
+- **高德**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `AMAP_API_KEY`）：地点之间的驾车耗时和距离。天气只在 Open-Meteo 查不到时作为备用（4 天）。
 - **联网搜索**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `TAVILY_API_KEY`）：用户要求"深入研究"时使用。
 - **本地知识图谱**：离线脚本 `scripts/build_knowledge_graph.py` 从本地资料里抽取实体和"位于 / 临近"关系，写入 `knowledgeentity`、`knowledgerelation` 两张表；景点和住宿两个子 Agent 会把这层关系作为额外证据。交通图谱 `travelroute` 的两端也是这里的实体。
 - 没有可用数据源时，系统会明确说明查不到，不生成虚构的班次、价格、营业时间或天气。

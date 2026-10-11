@@ -76,13 +76,13 @@ def _summaries(results: list[WorkerResult], worker: str) -> list[str]:
 
 
 def weather_by_date(results: list[WorkerResult]) -> dict[str, str]:
-    """按日期取天气预报原文：{"2026-10-12": "白天晴 25℃；夜间多云 16℃"}。"""
+    """按日期取天气预报原文：{"2026-10-12": "晴 16~25℃；降水概率 5%"}。"""
     forecast: dict[str, str] = {}
     for result in results:
         if result.worker != "weather":
             continue
         for item in result.evidence:
-            # 证据治理会精简 metadata，所以日期从正文里取（"成都 2026-10-12：白天晴…"）。
+            # 证据治理会精简 metadata，所以日期从正文里取（"成都 2026-10-12：晴 16~25℃…"）。
             match = _WEATHER_DATE.search(item.content)
             if match is None or match.group(1) in forecast:
                 continue

@@ -65,26 +65,32 @@ class _Fixed:
 
 
 @pytest.mark.asyncio
-async def test_near_dates_come_from_amap_and_later_dates_from_open_meteo():
-    adapter = CombinedWeatherAdapter(
-        near=_Fixed(["成都 2026-10-11：白天晴 22℃；夜间多云 17℃", "成都 2026-10-12：白天晴 25℃；夜间多云 16℃"]),
-        far=_Fixed(["成都 2026-10-12：晴 16~25℃", "成都 2026-10-13：小雨 13~18℃；降水概率 80%"]),
-    )
+async def test_open_meteo_is_used_for_every_day_and_amap_only_when_it_fails():
+    amap = _Fixed(["成都 2026-10-11：晴转多云 17~22℃"])
 
-    evidence = await adapter.query("成都")
+    primary = CombinedWeatherAdapter(primary=_Fixed(["成都 2026-10-11：晴 16~25℃", "成都 2026-10-12：小雨 13~18℃"]), fallback=amap)
+    assert [item.content for item in await primary.query("成都")] == ["成都 2026-10-11：晴 16~25℃", "成都 2026-10-12：小雨 13~18℃"]
 
-    assert [item.content[3:13] for item in evidence] == ["2026-10-11", "2026-10-12", "2026-10-13"]
-    assert "白天晴 25℃" in evidence[1].content  # 重叠的日期保留高德的
+    fallback = CombinedWeatherAdapter(primary=_Fixed(error=TimeoutError()), fallback=amap)
+    assert [item.content for item in await fallback.query("成都")] == ["成都 2026-10-11：晴转多云 17~22℃"]
+
+    with pytest.raises(ExternalServiceError):
+        await CombinedWeatherAdapter(primary=_Fixed(error=TimeoutError()), fallback=_Fixed(error=ExternalServiceError("x"))).query("成都")
 
 
 @pytest.mark.asyncio
-async def test_one_source_failing_still_returns_the_other_and_both_failing_raises():
-    far_only = CombinedWeatherAdapter(near=_Fixed(error=ExternalServiceError("未配置 AMAP_API_KEY")),
-                                      far=_Fixed(["成都 2026-10-13：小雨 13~18℃"]))
-    assert len(await far_only.query("成都")) == 1
+async def test_amap_forecast_is_written_in_the_same_format_as_open_meteo():
+    from app.mcp_core.adapters.weather import AmapWeatherAdapter
 
-    near_only = CombinedWeatherAdapter(near=_Fixed(["成都 2026-10-11：白天晴 22℃"]), far=_Fixed(error=TimeoutError()))
-    assert len(await near_only.query("成都")) == 1
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "geocode" in request.url.path:
+            return httpx.Response(200, json={"status": "1", "geocodes": [{"adcode": "510100"}]})
+        return httpx.Response(200, json={"status": "1", "forecasts": [{"casts": [
+            {"date": "2026-10-12", "dayweather": "晴", "nightweather": "多云", "daytemp": "25", "nighttemp": "16"},
+            {"date": "2026-10-13", "dayweather": "阴", "nightweather": "阴", "daytemp": "22", "nighttemp": "17"},
+        ]}]})
 
-    with pytest.raises(ExternalServiceError):
-        await CombinedWeatherAdapter(near=_Fixed(error=ExternalServiceError("x")), far=_Fixed(error=TimeoutError())).query("成都")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        evidence = await AmapWeatherAdapter(api_key="test", executor=_executor(), client=client).query("成都")
+
+    assert [item.content for item in evidence] == ["成都 2026-10-12：晴转多云 16~25℃", "成都 2026-10-13：阴 17~22℃"]

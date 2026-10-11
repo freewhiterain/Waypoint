@@ -10,6 +10,16 @@ import httpx
 from app.config import settings
 from app.mcp_core.reliability import ExternalServiceError, ResilientExecutor
 from app.schemas.planning import Evidence
+from app.utils.logger import app_logger
+
+
+def _amap_text(row: dict, forecast: bool) -> str:
+    """预报写成和 Open-Meteo 一样的格式（"晴转多云 16~25℃"），同一份行程里前后几天读起来一致。"""
+    if not forecast:
+        return f"{row.get('weather', '未知')} {row.get('temperature', '未知')}℃"
+    day, night = row.get("dayweather") or "未知", row.get("nightweather")
+    sky = day if not night or night == day else f"{day}转{night}"
+    return f"{sky} {row.get('nighttemp', '未知')}~{row.get('daytemp', '未知')}℃"
 
 
 class AmapWeatherAdapter:
@@ -72,12 +82,7 @@ class AmapWeatherAdapter:
         rows = data.get("forecasts", [{}])[0].get("casts", []) if forecast else data.get("lives", [])
         return [
             Evidence(
-                content=(
-                    f"{city} {row.get('date', row.get('reporttime', ''))}："
-                    f"白天{row.get('dayweather', row.get('weather', '未知'))} "
-                    f"{row.get('daytemp', row.get('temperature', '未知'))}℃；"
-                    f"夜间{row.get('nightweather', '未知')} {row.get('nighttemp', '未知')}℃"
-                ),
+                content=f"{city} {row.get('date', row.get('reporttime', ''))}：{_amap_text(row, forecast)}",
                 source="高德开放平台天气服务",
                 source_url="https://lbs.amap.com/api/webservice/guide/api/weatherinfo",
                 retrieved_at=now,
@@ -192,30 +197,17 @@ class OpenMeteoWeatherAdapter:
 
 
 class CombinedWeatherAdapter:
-    """近几天用高德（国内官方预报，4 天），之后的日期用 Open-Meteo 补到 16 天。"""
+    """预报以 Open-Meteo 为准（16 天、带降水概率）；它查不到时退回高德（4 天）。"""
 
-    def __init__(self, near: AmapWeatherAdapter | None = None, far: OpenMeteoWeatherAdapter | None = None):
-        self.near = near if near is not None else AmapWeatherAdapter()
-        self.far = far if far is not None else OpenMeteoWeatherAdapter()
+    def __init__(self, primary: OpenMeteoWeatherAdapter | None = None, fallback: AmapWeatherAdapter | None = None):
+        self.primary = primary if primary is not None else OpenMeteoWeatherAdapter()
+        self.fallback = fallback if fallback is not None else AmapWeatherAdapter()
 
     async def query(self, city: str, forecast: bool = True) -> list[Evidence]:
-        errors: list[Exception] = []
-        near: list[Evidence] = []
         try:
-            near = await self.near.query(city, forecast)
+            evidence = await self.primary.query(city, forecast)
+            if evidence:
+                return evidence
         except Exception as exc:
-            errors.append(exc)
-        if not forecast and near:
-            return near
-        far: list[Evidence] = []
-        try:
-            far = await self.far.query(city, forecast)
-        except Exception as exc:
-            errors.append(exc)
-        if not near and not far:
-            raise errors[0]
-        covered = {match.group(1) for item in near if (match := _DATE_IN_CONTENT.search(item.content))}
-        return near + [
-            item for item in far
-            if not ((match := _DATE_IN_CONTENT.search(item.content)) and match.group(1) in covered)
-        ]
+            app_logger.warning(f"Open-Meteo 天气查询失败，改用高德: {type(exc).__name__}: {exc}")
+        return await self.fallback.query(city, forecast)
