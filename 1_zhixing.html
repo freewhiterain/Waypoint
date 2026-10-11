@@ -1514,6 +1514,8 @@
           tool: call.tool,
           messageId,
           askSteps,
+          // 三个槽位都已知时不出题，先让用户确认再开始规划。
+          confirming: askSteps.length === 0,
           currentStep: askSteps[0] || 3,
           values,
           errors: {},
@@ -1538,12 +1540,7 @@
         } else if (messageId) {
           existing.messageId = messageId;
         }
-        const tool = state.tripTools[call.call_id];
-        // 实时收到且三个槽位都齐了：不弹窗，直接提交规划。历史恢复时不自动提交。
-        if (shouldScroll && !existing && tool.askSteps.length === 0) {
-          submitTripToolResult(call.call_id, "completed");
-          return;
-        }
+        // 三个槽位都齐时卡片显示“将为你规划：……”，等用户确认后才提交规划。
         renderTripTool(call.call_id, { focus: shouldScroll });
         if (shouldScroll) {
           const container = document.getElementById("chatMessages");
@@ -1636,7 +1633,8 @@
         if (tool.status === "completed") text = `<i class="fa-solid fa-circle-check"></i> 旅行规划已提交：${escapeHtml(tripSummary(tool))}`;
         else if (tool.submitting && tool.status !== "recommend_destination") text = `<i class="fa-solid fa-spinner fa-spin"></i> 正在规划：${escapeHtml(tripSummary(tool))}`;
         else if (tool.submitting) text = `<i class="fa-solid fa-spinner fa-spin"></i> 正在推荐目的地…`;
-        else if (tool.closed) text = `<button type="button" class="trip-tool-reopen" data-trip-action="reopen">未完成，点击继续填写</button>`;
+        else if (tool.closed) text = `<button type="button" class="trip-tool-reopen" data-trip-action="reopen">${tool.confirming ? "尚未确认，点击继续" : "未完成，点击继续填写"}</button>`;
+        else if (tool.confirming) text = `将为你规划：${escapeHtml(tripSummary(tool))}，等待你确认…`;
         else text = "等待你的回答…";
         line.innerHTML = `
           <div>${text}</div>
@@ -1681,6 +1679,10 @@
         // innerHTML 重绘会丢掉焦点；记下来，重绘后还给卡片，数字键选择才能连续使用。
         const hadFocus = focus || (dock.contains(document.activeElement)
           && !document.activeElement.matches("input"));
+        if (tool.confirming) {
+          renderTripConfirm(dock, tool, hadFocus);
+          return;
+        }
         const step = tool.currentStep;
         const page = Math.max(0, tool.askSteps.indexOf(step));
         const total = tool.askSteps.length;
@@ -1760,6 +1762,66 @@
             advanceTripTool(callId);
           }
         };
+      }
+
+      // 三个槽位都已知：显示将要规划的内容，确认后才提交；也可以改成逐题修改。
+      function renderTripConfirm(dock, tool, hadFocus) {
+        const callId = tool.callId;
+        dock.innerHTML = `
+          <div class="trip-tool-header">
+            <div class="trip-tool-title">将为你规划：${escapeHtml(tripSummary(tool))}</div>
+            <div class="trip-tool-actions">
+              <button type="button" class="trip-tool-icon" data-trip-action="close" aria-label="关闭确认" title="关闭">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+          <div class="trip-tool-list" role="listbox" aria-label="是否确认规划">
+            <button type="button" class="trip-tool-row" data-trip-action="confirm" role="option">
+              <span class="trip-tool-index">1</span>
+              <span class="trip-tool-label">确认，开始规划</span>
+              <i class="fa-solid fa-arrow-right trip-tool-arrow" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="trip-tool-row" data-trip-action="edit" role="option">
+              <span class="trip-tool-index">2</span>
+              <span class="trip-tool-label">修改<small>重新选择目的地、日期或天数</small></span>
+              <i class="fa-solid fa-arrow-right trip-tool-arrow" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="trip-tool-error" role="alert">${escapeHtml(tool.errors.form || "")}</div>
+        `;
+        if (hadFocus) dock.focus({ preventScroll: true });
+        dock.querySelector('[data-trip-action="close"]').addEventListener("click", () => closeTripTool(callId));
+        dock.querySelector('[data-trip-action="confirm"]').addEventListener("click", () => confirmTripTool(callId));
+        dock.querySelector('[data-trip-action="edit"]').addEventListener("click", () => editTripTool(callId));
+        dock.onkeydown = (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeTripTool(callId);
+          } else if (event.key === "1" || (event.key === "Enter" && !event.target.matches("button"))) {
+            event.preventDefault();
+            confirmTripTool(callId);
+          } else if (event.key === "2") {
+            event.preventDefault();
+            editTripTool(callId);
+          }
+        };
+      }
+
+      function confirmTripTool(callId) {
+        const tool = state.tripTools[callId];
+        if (!tool || tool.submitting) return;
+        submitTripToolResult(callId, "completed");
+      }
+
+      // 从确认改为逐题修改：三题都重新过一遍，已有的值保持选中。
+      function editTripTool(callId) {
+        const tool = state.tripTools[callId];
+        if (!tool || tool.submitting) return;
+        tool.confirming = false;
+        tool.askSteps = [1, 2, 3];
+        tool.currentStep = 1;
+        renderTripTool(callId, { focus: true });
       }
 
       // 点选项即作答：不是最后一题就翻页，最后一题只选中，由发送按钮提交，避免误触发规划。

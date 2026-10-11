@@ -52,14 +52,22 @@ def test_trip_form_is_a_numbered_question_card():
     assert 'data-trip-action="forward"' in html
     assert "tripDateOptions" in html
     assert '"__recommend__"' in html
-    # 填槽：只为缺失的槽位出题；三个都齐了就直接提交，卡片停靠在输入框位置。
+    # 填槽：只为缺失的槽位出题，卡片停靠在输入框位置。
     assert "missingTripSteps" in html
     assert "askSteps" in html
     assert 'id = "tripDock"' in html
     assert ".chat-input-area.trip-active .chat-input-wrapper" in html
+    # 三个槽位都齐时不自动提交：先显示"将为你规划：……"，用户确认后才开始规划。
     receive_start = html.index("function receiveTripToolCall")
     receive_end = html.index("function localIso", receive_start)
-    assert 'submitTripToolResult(call.call_id, "completed")' in html[receive_start:receive_end]
+    assert "submitTripToolResult" not in html[receive_start:receive_end]
+    assert "confirming: askSteps.length === 0" in html
+    confirm_start = html.index("function renderTripConfirm")
+    confirm_end = html.index("function editTripTool", confirm_start)
+    assert "将为你规划：" in html[confirm_start:confirm_end]
+    assert 'data-trip-action="confirm"' in html[confirm_start:confirm_end]
+    assert 'data-trip-action="edit"' in html[confirm_start:confirm_end]
+    assert 'submitTripToolResult(callId, "completed")' in html[confirm_start:confirm_end]
     recommend_start = html.index("function chooseTripOption")
     recommend_end = html.index("function advanceTripTool", recommend_start)
     assert 'submitTripToolResult(callId, "recommend_destination")' in html[recommend_start:recommend_end]
