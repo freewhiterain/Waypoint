@@ -240,9 +240,15 @@ class EvidenceGovernanceService:
 
     @staticmethod
     def _dedupe_key(evidence: Evidence) -> str:
-        if evidence.source_url:
-            return f"url:{evidence.source_url.strip().lower()}"
         normalized_content = " ".join(evidence.content.split()).lower()
+        if evidence.source_url:
+            url = evidence.source_url.strip().lower()
+            metadata = evidence.metadata
+            # 接口类来源（高德天气、路线）每条证据都指向同一个文档地址，内容却各不相同；
+            # 只按地址去重会把 4 天的天气合并成 1 天。
+            if metadata.get("source_type") == "api" or metadata.get("provider") == "amap":
+                return f"url:{url}|content:{normalized_content}"
+            return f"url:{url}"
         return f"content:{normalized_content}"
 
     @staticmethod

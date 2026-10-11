@@ -140,3 +140,40 @@ async def test_district_estimates_order_places_without_showing_invented_minutes(
 
     assert [slot.title for slot in itinerary[0].slots[:2]] == ["A", "C"]  # 同区的排在一天
     assert all(slot.travel_minutes is None for day in itinerary for slot in day.slots)
+
+
+def weather_result(*days):
+    from app.schemas.planning import Evidence
+
+    evidence = [
+        Evidence(id=f"w{index}", content=f"成都 {day}：白天{sky} 20℃；夜间多云 15℃", source="高德开放平台天气服务",
+                 metadata={"provider": "amap"})
+        for index, (day, sky) in enumerate(days)
+    ]
+    # 总结为空：模拟子 Agent 的总结被证据校验丢掉的常见情况。
+    return WorkerResult(task_id="weather-t", worker="weather", status="partial", summary="", evidence=evidence)
+
+
+@pytest.mark.asyncio
+async def test_weather_evidence_reaches_the_selection_prompt_and_the_day_notes():
+    llm = FakeLLM([PlaceSelection(hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠")])])
+    results = [*chengdu_results(LEGS), weather_result(("2026-11-13", "晴"), ("2026-11-14", "小雨"))]
+
+    itinerary, _warnings = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    # 只带上行程覆盖到的日期；出发前一天的预报不出现。
+    assert '"weather": ["第1天：白天小雨 20℃；夜间多云 15℃"]' in llm.prompts[0]
+    assert itinerary[0].notes[0] == "天气：白天小雨 20℃；夜间多云 15℃"
+    assert not any(note.startswith("天气：") for note in itinerary[1].notes)
+
+
+def test_api_evidence_sharing_one_doc_url_is_not_collapsed_into_one():
+    from app.governance.evidence import EvidenceGovernanceService
+    from app.schemas.planning import Evidence
+
+    url = "https://lbs.amap.com/api/webservice/guide/api/weatherinfo"
+    days = [Evidence(content=f"成都 2026-11-1{n}：晴", source="高德", source_url=url, metadata={"provider": "amap"}) for n in (4, 5)]
+    pages = [Evidence(content=text, source="某网站", source_url="https://example.com/a") for text in ("上半段", "下半段")]
+
+    assert len({EvidenceGovernanceService._dedupe_key(item) for item in days}) == 2
+    assert len({EvidenceGovernanceService._dedupe_key(item) for item in pages}) == 1

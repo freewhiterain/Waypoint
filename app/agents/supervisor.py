@@ -210,7 +210,8 @@ async def synthesize_itinerary_with_llm(
             ]
         )
         if len(response.days) == len(template):
-            return response.days
+            # 每天的备注（如当天天气）在规划阶段已确定，不交给模型改写。
+            return [day.model_copy(update={"notes": source.notes}) for day, source in zip(response.days, template)]
         app_logger.warning("LLM 综合返回的天数与模板不一致，退回模板行程")
         return template
     except Exception:

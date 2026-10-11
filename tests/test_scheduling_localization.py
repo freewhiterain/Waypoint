@@ -66,3 +66,25 @@ def test_candidate_titles_still_pass_through_untouched():
     itinerary, _warnings = schedule_by_rules(_requirement(days=1), results)
 
     assert itinerary[0].slots[0].title == "IFS Chengdu"
+
+
+def test_internal_warnings_are_translated_or_hidden_from_the_user():
+    from app.services.planning import user_facing_warnings
+
+    shown = user_facing_warnings([
+        "Deduplicated evidence a into b for task t.",
+        "Dropped an unbound claim from subagent output.",
+        "weather_mcp is unavailable for weather.",
+        "travel_time_estimated:no_route_data",
+        "travel_time_estimated:no_route_data",
+        "No provider returned evidence for food.",
+        "itinerary_constraint:closed:第1天上午武侯祠尚未开放",
+        "证据未提供降水、风力、空气质量等信息。",
+    ])
+
+    assert shown == [
+        "部分地点之间没有查到真实交通耗时，顺序按所在区域粗略安排。",
+        "没有查到美食的资料。",
+        "第1天上午武侯祠尚未开放",
+        "证据未提供降水、风力、空气质量等信息。",
+    ]

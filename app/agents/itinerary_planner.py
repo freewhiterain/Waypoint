@@ -67,8 +67,36 @@ def _options(results: list[WorkerResult], worker: str) -> list[CandidateOption]:
     return [option for result in results if result.worker == worker for option in result.options]
 
 
+WEATHER_NOTE_PREFIX = "天气："
+_WEATHER_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})：")
+
+
 def _summaries(results: list[WorkerResult], worker: str) -> list[str]:
     return [result.summary for result in results if result.worker == worker and result.summary]
+
+
+def weather_by_date(results: list[WorkerResult]) -> dict[str, str]:
+    """按日期取天气预报原文：{"2026-10-12": "白天晴 25℃；夜间多云 16℃"}。"""
+    forecast: dict[str, str] = {}
+    for result in results:
+        if result.worker != "weather":
+            continue
+        for item in result.evidence:
+            # 证据治理会精简 metadata，所以日期从正文里取（"成都 2026-10-12：白天晴…"）。
+            match = _WEATHER_DATE.search(item.content)
+            if match is None or match.group(1) in forecast:
+                continue
+            day = match.group(1)
+            forecast[day] = item.content.split("：", 1)[-1].strip()
+    return forecast
+
+
+def _trip_weather(requirement: TravelRequirement, results: list[WorkerResult]) -> dict[int, str]:
+    """行程每一天（从 1 开始）对应的天气；预报没覆盖到的日期不出现。"""
+    forecast = weather_by_date(results)
+    start = requirement.departure_date.toordinal()
+    days = {index + 1: requirement.departure_date.fromordinal(start + index).isoformat() for index in range(requirement.days)}
+    return {day: forecast[iso] for day, iso in days.items() if iso in forecast}
 
 
 class TravelCosts:
@@ -121,7 +149,8 @@ async def select_places_with_llm(
         "attractions": [_option_digest(option) for option in _options(results, "attractions")],
         "dinners": [_option_digest(option) for option in _options(results, "food")],
         "hotels": [_option_digest(option) for option in _options(results, "hotel")],
-        "weather": _summaries(results, "weather"),
+        "weather": [f"第{day}天：{text}" for day, text in _trip_weather(requirement, results).items()]
+        or _summaries(results, "weather"),
         "transport": [option.description for option in _options(results, "transport")][:30],
     }
     messages = [
@@ -395,6 +424,9 @@ async def plan_itinerary(
         if not feedback or by_rules:
             break
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
+    for day, text in _trip_weather(requirement, results).items():
+        if day <= len(itinerary):
+            itinerary[day - 1].notes.insert(0, f"{WEATHER_NOTE_PREFIX}{text}")
     return itinerary, list(dict.fromkeys(warnings))
 
 
@@ -410,4 +442,5 @@ __all__ = [
     "schedule_by_rules",
     "select_places_by_rules",
     "select_places_with_llm",
+    "weather_by_date",
 ]

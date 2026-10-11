@@ -35,6 +35,7 @@ DeepSearchRunner = Callable[..., Awaitable[ResearchReport]]
 EventCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 # 证据校验时忽略的虚词：模型改写语序时这些词的增删不改变事实内容。
+_WORKER_LABELS = {"attractions": "景点", "hotel": "住宿", "food": "美食", "weather": "天气", "transport": "交通"}
 _STOPWORDS = frozenset(
     {
         "的", "了", "是", "在", "和", "与", "及", "或", "也", "都", "就", "还",
@@ -192,7 +193,7 @@ class DomainSubagent:
                 task_id=task.id,
                 worker=self.worker,
                 status="unavailable",
-                summary=f"No evidence is available for {self.worker}.",
+                summary=f"没有查到{_WORKER_LABELS.get(self.worker, self.worker)}的资料。",
                 research_report=research_report,
                 warnings=list(dict.fromkeys(warnings or [f"No provider returned evidence for {self.worker}."])),
             )
