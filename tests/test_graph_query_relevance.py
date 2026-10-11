@@ -20,7 +20,7 @@ import uuid
 
 import pytest
 
-from app.agents.workers.graph_knowledge import _MAX_GRAPH_EVIDENCE, GraphKnowledgeService
+from app.rag.graph_knowledge import _MAX_GRAPH_EVIDENCE, GraphKnowledgeService
 
 
 class _Entity:

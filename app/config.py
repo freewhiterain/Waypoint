@@ -10,7 +10,6 @@ from pydantic import Field
 from functools import lru_cache
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SUPPORTED_TRAVEL_AGENT_MODES = {"supervisor", "supervisor_subagents"}
 DEGRADED_PLANNING_REASON = "no_llm_or_provider"
 DEGRADED_PLANNING_MARKER = "planning_degraded:no_llm_or_provider"
 
@@ -39,8 +38,6 @@ class Settings(BaseSettings):
         default="development-only-change-me",
         alias="JWT_SECRET_KEY",
     )
-    travel_agent_mode: str = Field(default="supervisor_subagents", alias="TRAVEL_AGENT_MODE")
-    allow_legacy_fallback: bool = Field(default=False, alias="ALLOW_LEGACY_FALLBACK")
     enable_external_tools: bool = Field(default=False, alias="ENABLE_EXTERNAL_TOOLS")
     cors_origins: str = Field(
         default="http://localhost:18000,http://127.0.0.1:18000",

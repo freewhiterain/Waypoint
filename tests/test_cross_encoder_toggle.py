@@ -1,4 +1,4 @@
-from app.agents.workers.local_knowledge import LocalKnowledgeService
+from app.rag.local_knowledge import LocalKnowledgeService
 from app.config import settings
 from app.rag.reranker import CrossEncoderReranker, RelevanceReranker
 

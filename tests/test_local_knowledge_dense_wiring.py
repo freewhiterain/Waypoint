@@ -1,6 +1,6 @@
 from langchain_core.documents import Document
 
-from app.agents.workers.local_knowledge import LocalKnowledgeService
+from app.rag.local_knowledge import LocalKnowledgeService
 
 
 class _RecordingVectorstore:

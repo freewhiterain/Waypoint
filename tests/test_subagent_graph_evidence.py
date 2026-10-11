@@ -1,18 +1,13 @@
-"""知识图谱证据必须进入现役 subagents 路径，且不能拖垮文档检索。
+"""知识图谱证据必须进入 subagents 的 local_rag 检索，且不能拖垮文档检索。
 
-TRAVEL_AGENT_MODE 默认是 supervisor_subagents（见 app/config.py 与
-app/agents/factory.py），真实请求走的是 app/agents/subagents/**。但图谱检索
-只接在 app/agents/workers/attractions.py 和 hotel.py 上——那是 mode=supervisor
-的旧路径。结果是 GraphKnowledgeService、KnowledgeEntity/KnowledgeRelation 两张
-表、以及整套 graph_extraction 在默认配置下**一条也不会被查到**：写进去的图谱
-数据对线上规划毫无影响。
+真实请求走的是 app/agents/subagents/**。图谱检索曾经只接在已删除的旧 Worker
+路径上，GraphKnowledgeService 和两张图谱表在真实规划里一条也查不到。
 
 接入方式的取舍：不新增一个 "graph" provider 塞进 provider_order。
 provider_order 是**降级链**——base.run 里只要有一个 provider 报 sufficient 就
 break，local_rag 一命中，排在它后面的 graph 永远轮不到；排在它前面又会让图谱
-抢占文档检索。图谱和文档是互补关系，不是备选关系，所以按旧路径
-（workers/attractions.py 的 `[*document_evidence, *graph_evidence]`）的语义，
-在 local_rag 这个 provider 内部合并。
+抢占文档检索。图谱和文档是互补关系，不是备选关系，所以在 local_rag 这个
+provider 内部按 `[*document_evidence, *graph_evidence]` 合并。
 """
 
 import pytest

@@ -13,7 +13,6 @@ import pytest
 
 from app.agents.subagents.registry import SubagentRegistry
 from app.agents.supervisor import assemble_draft, run_travel_planning
-from app.agents.workers.rag_analysis import WorkerAnalysis, worker_result_from_analysis
 from app.schemas.planning import (
     Evidence,
     ResearchTask,
@@ -70,25 +69,6 @@ async def test_subagent_results_backed_by_mock_markdown_are_disclosed_as_mock():
 
     assert all(result.is_mock for result in draft.worker_results)
 
-
-def test_local_worker_keeps_mock_disclosure_even_without_evidence():
-    """本地 Worker 一律披露 is_mock=True，与是否检索到证据无关。
-
-    is_mock 表示"数据来源是本地模拟资料"，不是健康度信号；降级由
-    assemble_draft 按状态另行判定。这条守住数据披露契约不被后续改动放宽。
-    """
-    task = ResearchTask(id="transport-task", task_type="transport", query="成都交通")
-    analysis = WorkerAnalysis(
-        summary="没有检索到交通证据。",
-        options=[],
-        warnings=["No evidence is available for this analysis."],
-        used_mock_data=False,
-    )
-
-    result = worker_result_from_analysis(task, "transport", [], analysis)
-
-    assert result.status == "unavailable"
-    assert result.is_mock is True
 
 
 def test_runtime_workers_without_evidence_still_degrade_the_draft():

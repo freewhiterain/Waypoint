@@ -5,9 +5,9 @@ import pytest
 
 from app.agents.scheduling import schedule_itinerary
 from app.agents.supervisor import run_travel_planning
-from app.agents.workers.base import TravelWorker
-from app.agents.workers.registry import WorkerRegistry
+from app.agents.subagents.registry import SubagentRegistry
 from app.schemas.planning import CandidateOption, ResearchTask, TravelRequirement, WorkerResult
+from app.schemas.research import SubagentResponse
 
 
 def requirement():
@@ -57,17 +57,17 @@ def test_itinerary_reads_candidates_from_attractions_worker():
     assert itinerary[0].slots[0].title == "Wuhou Shrine"
 
 
-class CountingWorker(TravelWorker):
+class CountingWorker:
     def __init__(self):
         self.active = 0
         self.max_active = 0
 
-    async def run(self, task: ResearchTask, requirement: TravelRequirement) -> WorkerResult:
+    async def run(self, task: ResearchTask, requirement: TravelRequirement) -> SubagentResponse:
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         await asyncio.sleep(0.02)
         self.active -= 1
-        return WorkerResult(
+        return SubagentResponse(
             task_id=task.id,
             worker=task.task_type,
             status="completed",
@@ -78,7 +78,7 @@ class CountingWorker(TravelWorker):
 @pytest.mark.asyncio
 async def test_supervisor_executes_independent_workers_in_parallel():
     worker = CountingWorker()
-    registry = WorkerRegistry(
+    registry = SubagentRegistry(
         {
             "attractions": worker,
             "transport": worker,

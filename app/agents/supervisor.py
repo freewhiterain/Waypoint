@@ -23,7 +23,6 @@ from app.config import settings
 from app.governance.evidence import EvidenceGovernanceService, ReviewedResearch
 from app.governance.events import TaskEventService
 from app.rag.evidence import evidence_is_mock
-from app.rag.identifiers import stable_hash
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -89,71 +88,6 @@ def _candidate_to_option(candidate: EvidenceBoundCandidate, worker: str) -> Cand
     )
 
 
-def _legacy_evidence_with_ids(result: WorkerResult):
-    id_remap: dict[str, str] = {}
-    normalized = []
-    for index, item in enumerate(result.evidence):
-        evidence_id = item.id or (
-            f"{result.task_id}-ev-"
-            f"{stable_hash(result.task_id, item.source, item.source_url or '', item.content, index)[:16]}"
-        )
-        if item.id:
-            id_remap[item.id] = evidence_id
-        normalized.append(item.model_copy(update={"id": evidence_id}))
-    return normalized, id_remap
-
-
-def _infer_legacy_option_evidence_ids(option: CandidateOption, evidence) -> list[str]:
-    if option.evidence_ids:
-        return option.evidence_ids
-    matches = []
-    option_name = option.name.strip().casefold()
-    option_source = str(option.attributes.get("source", "")).strip().casefold()
-    description = option.description.strip()
-    for item in evidence:
-        if item.id is None:
-            continue
-        source_matches = option_source and option_source == item.source.strip().casefold()
-        content_matches = (
-            (description and item.content.startswith(description))
-            or (len(option_name) >= 4 and option_name in item.content.casefold())
-        )
-        if source_matches and content_matches:
-            matches.append(item.id)
-    if matches:
-        return list(dict.fromkeys(matches))
-    if len(evidence) == 1 and evidence[0].id is not None:
-        return [evidence[0].id]
-    return []
-
-
-def _worker_result_to_subagent_response(result: WorkerResult) -> SubagentResponse:
-    evidence, id_remap = _legacy_evidence_with_ids(result)
-    return SubagentResponse(
-        task_id=result.task_id,
-        worker=result.worker,
-        status=result.status,
-        summary=result.summary,
-        candidates=[
-            EvidenceBoundCandidate(
-                id=option.id,
-                name=option.name,
-                category=option.category,
-                description=option.description,
-                estimated_cost=option.estimated_cost,
-                attributes=option.attributes,
-                evidence_ids=[
-                    id_remap.get(evidence_id, evidence_id)
-                    for evidence_id in _infer_legacy_option_evidence_ids(option, evidence)
-                ],
-            )
-            for option in result.options
-        ],
-        evidence=evidence,
-        warnings=result.warnings,
-    )
-
-
 def _subagent_response_to_worker_result(
     response: SubagentResponse,
     governance: EvidenceGovernanceService | None = None,
@@ -213,15 +147,8 @@ def _governed_summary(response: SubagentResponse, reviewed) -> str:
     return "No evidence-governed claims retained."
 
 
-def _coerce_subagent_response(result: Any, task: ResearchTask) -> SubagentResponse:
-    if isinstance(result, SubagentResponse):
-        return result
-    if isinstance(result, WorkerResult):
-        return _worker_result_to_subagent_response(result)
-    try:
-        return SubagentResponse.model_validate(result)
-    except Exception:
-        return _worker_result_to_subagent_response(WorkerResult.model_validate(result))
+def _coerce_subagent_response(result: Any) -> SubagentResponse:
+    return result if isinstance(result, SubagentResponse) else SubagentResponse.model_validate(result)
 
 
 def _worker_results_from_state(state: SupervisorState) -> list[WorkerResult]:
@@ -231,9 +158,7 @@ def _worker_results_from_state(state: SupervisorState) -> list[WorkerResult]:
 
 def _subagent_responses_from_state(state: SupervisorState) -> list[SubagentResponse]:
     response_values = _worker_result_mapping(state.get("subagent_responses", {}))
-    if response_values:
-        return [SubagentResponse.model_validate(value) for value in response_values.values()]
-    return [_worker_result_to_subagent_response(result) for result in _worker_results_from_state(state)]
+    return [SubagentResponse.model_validate(value) for value in response_values.values()]
 
 
 class _LLMItinerary(BaseModel):
@@ -420,11 +345,9 @@ def create_supervisor_graph(
             run_kwargs["prior_results"] = _worker_results_from_state(state)
         try:
             raw_result = await registry.run(task, requirement, **run_kwargs)
-            # 兼容旧 WorkerResult 的显式标记，同时按证据来源兜底：subagent 返回的
-            # 是 SubagentResponse，只看 isinstance 会让本地模拟资料丢失 mock 披露。
-            is_mock = isinstance(raw_result, WorkerResult) and raw_result.is_mock
-            response = _coerce_subagent_response(raw_result, task)
-            is_mock = is_mock or evidence_is_mock(response.evidence)
+            response = _coerce_subagent_response(raw_result)
+            # 是否来自本地模拟资料只看证据来源，这是 is_mock 的唯一判定口径。
+            is_mock = evidence_is_mock(response.evidence)
             if response.research_report and response.research_report.conflicts:
                 await emit_worker_event(
                     "research_conflict",

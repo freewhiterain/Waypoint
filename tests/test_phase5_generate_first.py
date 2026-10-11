@@ -4,7 +4,6 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.agents.workers.transport import TransportWorker
 from app.schemas.planning import ResearchTask, TravelRequirement, TravelRequirementDraft
 from app.services.planning import RequirementExtractor
 
@@ -52,16 +51,6 @@ def test_merge_prefers_rule_hits_and_fills_gaps():
     assert merged.origin == "上海"
     assert merged.styles == ["美食"]
 
-
-async def test_transport_worker_degrades_without_origin():
-    requirement = TravelRequirement(destination="大理", departure_date=TODAY, days=3)
-    task = ResearchTask(task_type="transport", query="交通方式")
-
-    result = await TransportWorker().run(task, requirement)
-
-    assert result.status == "partial"
-    assert "出发地" in result.summary
-    assert result.options == []
 
 
 async def test_supervisor_draft_uses_confirmed_requirements(monkeypatch):

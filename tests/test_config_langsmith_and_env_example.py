@@ -107,7 +107,6 @@ def test_env_example_covers_every_documented_setting():
         "CORS_ORIGINS",
         "ENABLE_CROSS_ENCODER_RERANK",
         "CROSS_ENCODER_MODEL",
-        "TRAVEL_AGENT_MODE",
         "JWT_SECRET_KEY",
         "POSTGRES_PORT",
         "LANGSMITH_TRACING",

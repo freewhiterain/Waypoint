@@ -1,6 +1,6 @@
 import pytest
 
-from app.agents.workers.graph_knowledge import GraphKnowledgeService
+from app.rag.graph_knowledge import GraphKnowledgeService
 
 
 class _RaisingSessionFactory:

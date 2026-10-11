@@ -5,7 +5,6 @@ import pytest
 
 from app.agents import factory
 from app.agents.subagents.registry import SubagentRegistry
-from app.agents.workers.registry import WorkerRegistry
 from app.api.v1 import planning as planning_api
 from app.api.v1 import tools as tools_api
 from app.governance.events import InMemoryEventRepository
@@ -70,17 +69,8 @@ async def test_planning_task_status_reports_failed_and_degraded_terminal_events(
     assert degraded["status"] == "degraded"
 
 
-def test_factory_selects_legacy_registry_for_supervisor_mode(monkeypatch):
-    monkeypatch.setattr(factory.settings, "travel_agent_mode", "supervisor")
-
-    registry, fallback_reason = factory.create_planning_registry()
-
-    assert isinstance(registry, WorkerRegistry)
-    assert fallback_reason is None
-
 
 def test_factory_selects_subagent_registry_for_subagent_mode(monkeypatch):
-    monkeypatch.setattr(factory.settings, "travel_agent_mode", "supervisor_subagents")
     monkeypatch.setattr(factory.settings, "llm_api_key", "configured")
 
     registry, fallback_reason = factory.create_planning_registry()
@@ -89,32 +79,10 @@ def test_factory_selects_subagent_registry_for_subagent_mode(monkeypatch):
     assert fallback_reason is None
 
 
-@pytest.mark.asyncio
-async def test_chat_agent_graph_receives_mode_selected_registry(monkeypatch):
-    from app.agents import supervisor
-
-    registry = object()
-    captured = {}
-
-    def fake_registry():
-        return registry, None
-
-    def fake_graph(*, registry):
-        captured["registry"] = registry
-        return "graph"
-
-    monkeypatch.setattr(factory, "create_planning_registry", fake_registry)
-    monkeypatch.setattr(supervisor, "create_supervisor_graph", fake_graph)
-
-    assert await factory.create_chat_agent() == "graph"
-    assert captured["registry"] is registry
-
 
 @pytest.mark.asyncio
 async def test_factory_fallback_marks_no_llm_planning_as_degraded(monkeypatch):
-    monkeypatch.setattr(factory.settings, "travel_agent_mode", "supervisor_subagents")
     monkeypatch.setattr(factory.settings, "llm_api_key", "")
-    monkeypatch.setattr(factory.settings, "allow_legacy_fallback", True)
     captured = {}
 
     async def fake_run(requirement, **kwargs):
@@ -125,7 +93,7 @@ async def test_factory_fallback_marks_no_llm_planning_as_degraded(monkeypatch):
 
     result = await factory.run_travel_planning(requirement())
 
-    assert isinstance(captured["registry"], WorkerRegistry)
+    assert isinstance(captured["registry"], SubagentRegistry)
     assert result.status == "degraded"
     assert "planning_degraded:no_llm_or_provider" in result.warnings
 

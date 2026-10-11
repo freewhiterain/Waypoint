@@ -105,14 +105,14 @@ class FakeDraft:
         return {"destination": "Kyoto", "summary": "confirmed itinerary"}
 
 
-class EmptyLegacyWorker:
+class EmptyWorker:
     async def run(self, task, requirement):
         return SubagentResponse(
             task_id=task.id,
             worker=task.task_type,
             status="unavailable",
             summary="No evidence available.",
-            warnings=["legacy worker has no provider"],
+            warnings=["worker has no provider"],
         )
 
 
@@ -268,7 +268,7 @@ async def run_real_planning_event_stream(monkeypatch):
     )
     workers = {
         "attractions": attractions,
-        **{worker: EmptyLegacyWorker() for worker in ("weather", "transport", "hotel", "food")},
+        **{worker: EmptyWorker() for worker in ("weather", "transport", "hotel", "food")},
     }
     registry = SubagentRegistry(workers)
 

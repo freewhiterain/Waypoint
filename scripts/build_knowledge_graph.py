@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable
 
-from app.agents.workers.graph_knowledge import GraphKnowledgeService
+from app.rag.graph_knowledge import GraphKnowledgeService
 from app.config import settings
 from app.models.base import init_db
 from app.rag.document_loader import DocumentManager

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.agents.workers.local_knowledge import get_local_knowledge_service
+from app.rag.local_knowledge import get_local_knowledge_service
 from app.config import settings
 from app.utils.logger import app_logger
 

@@ -67,7 +67,7 @@ def create_default_subagent_registry(
     llm: Any | None = None,
     deep_search: Callable[..., Any] | None = None,
 ) -> SubagentRegistry:
-    """Create the default registry without touching the legacy worker registry."""
+    """Create the registry with one subagent per research domain."""
 
     shared_kwargs = {
         "tool_builder": build_tools,

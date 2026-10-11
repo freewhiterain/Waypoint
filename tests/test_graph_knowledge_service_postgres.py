@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 import app.models  # noqa: F401
-from app.agents.workers.graph_knowledge import GraphKnowledgeService
+from app.rag.graph_knowledge import GraphKnowledgeService
 from app.models.base import async_session_maker, init_db
 from app.models.knowledge_graph import KnowledgeEntity, KnowledgeRelation
 from app.rag.graph_extraction import ExtractedEntity, ResolvedRelation

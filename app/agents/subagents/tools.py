@@ -233,10 +233,10 @@ async def build_subagent_tools(
 
     if "local_rag" in canonical.allowed_tools:
         if knowledge is None:
-            from app.agents.workers.local_knowledge import get_local_knowledge_service
+            from app.rag.local_knowledge import get_local_knowledge_service
             knowledge = get_local_knowledge_service()
         if graph is None:
-            from app.agents.workers.graph_knowledge import get_graph_knowledge_service
+            from app.rag.graph_knowledge import get_graph_knowledge_service
             graph = get_graph_knowledge_service()
 
         async def invoke_rag(payload: Mapping[str, Any]) -> Any:
@@ -246,7 +246,7 @@ async def build_subagent_tools(
             document_evidence = knowledge.search_destination(destination, category, query)
             # 图谱与文档互补：不新增 provider 塞进 provider_order（那是降级链，
             # local_rag 一命中后面就 break，图谱永远轮不到），而是在这里合并，
-            # 语义与旧路径 workers/attractions.py 的 [*doc, *graph] 保持一致。
+            # 文档证据在前、图谱证据在后：[*doc, *graph]。
             graph_evidence = await _graph_evidence(graph, destination, category, query)
             return _merge_evidence(document_evidence, graph_evidence)
 
