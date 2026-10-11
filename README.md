@@ -82,7 +82,7 @@ python scripts/test_llm.py
 python -m pytest -q
 ```
 
-### 第六步：初始化 RAG（可选，需要 DashScope Key）
+### 第六步：初始化 RAG（可选，需先启动 Ollama 并拉取 embedding 模型）
 
 ```powershell
 python scripts/init_rag.py

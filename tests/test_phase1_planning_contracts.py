@@ -4,7 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from app.agents.planner import create_research_plan, parallel_groups
-from app.agents.worker_tools import create_worker_tools
 from app.schemas.planning import ResearchTask, TravelRequirement
 
 
@@ -69,16 +68,3 @@ def test_parallel_groups_rejects_cycles():
 
     with pytest.raises(ValueError, match="循环"):
         parallel_groups([first, second])
-
-
-def test_five_workers_are_exposed_as_read_only_agent_tools():
-    tools = create_worker_tools()
-
-    assert {tool.name for tool in tools} == {
-        "attractions_research_agent",
-        "transport_research_agent",
-        "hotel_research_agent",
-        "food_research_agent",
-        "weather_research_agent",
-    }
-    assert all("只读" in tool.description for tool in tools)

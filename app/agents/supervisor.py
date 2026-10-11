@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 
 from app.agents.planner import create_research_plan, parallel_groups
 from app.agents.itinerary_planner import plan_itinerary
-from app.agents.scheduling import schedule_itinerary
 from app.agents.subagents.registry import create_default_subagent_registry
 from app.config import settings
 from app.governance.evidence import EvidenceGovernanceService, ReviewedResearch
@@ -552,17 +551,4 @@ async def run_travel_planning(
     return TravelPlanDraft.model_validate(result["draft"])
 
 
-async def create_supervisor_agent():
-    """兼容 Agent 工厂的异步构造入口。"""
-    return create_supervisor_graph()
-
-
-def build_itinerary(
-    requirement: TravelRequirement,
-    results: list[WorkerResult],
-) -> list[ItineraryDay]:
-    """Compatibility wrapper for the constraint-aware scheduler."""
-
-    itinerary, _warnings = schedule_itinerary(requirement, results)
-    return itinerary
 

@@ -14,7 +14,6 @@ dependencies = [
     "langgraph-prebuilt==1.0.5",
 
     # LLM 集成
-    "dashscope==1.25.4",
 
     # 数据库
     "psycopg[binary,pool]==3.3.2",

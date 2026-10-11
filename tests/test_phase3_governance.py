@@ -2,9 +2,7 @@ from datetime import date
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command
 
-from app.agents.approval_workflow import create_approval_workflow
 from app.agents.supervisor import create_supervisor_graph, run_travel_planning
 from app.governance.approvals import ApprovalService, InMemoryApprovalRepository
 from app.governance.events import InMemoryEventRepository, TaskEventService
@@ -67,18 +65,6 @@ async def test_formal_itinerary_save_and_overwrite_are_approved_and_versioned():
     await approvals.decide(second.id, "u", "approve")
     assert (await service.apply(second.id, "u"))["version"] == 2
 
-
-def test_interrupt_workflow_pauses_and_resumes_with_same_thread():
-    graph = create_approval_workflow(InMemorySaver())
-    config = {"configurable": {"thread_id": "approval-thread"}}
-    paused = graph.invoke(
-        {"approval_id": "a1", "user_id": "u1", "action": "memory.upsert", "payload": {"key": "style"}},
-        config,
-    )
-
-    assert paused["__interrupt__"]
-    resumed = graph.invoke(Command(resume={"decision": "approve"}), config)
-    assert resumed["status"] == "approved"
 
 
 @pytest.mark.asyncio

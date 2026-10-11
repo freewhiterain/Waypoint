@@ -15,13 +15,13 @@ DEGRADED_PLANNING_REASON = "no_llm_or_provider"
 DEGRADED_PLANNING_MARKER = "planning_degraded:no_llm_or_provider"
 
 # ======== 环境兼容性修复（课件没有，但本地环境必需） ========
-# 问题：本机开了代理（如 Clash 端口 7897），代理会把发往阿里云国内服务的请求
-#       转发到海外节点，导致 dashscope.aliyuncs.com 的 SSL 握手失败。
-# 修复：把阿里云域名加入 NO_PROXY，让相关请求绕过代理直连。
+# 问题：本机开了代理（如 Clash 端口 7897）时，发往本机服务（Ollama、数据库）的请求
+#       也会被送进代理，导致连接失败。
+# 修复：把本机地址加入 NO_PROXY，让这些请求绕过代理直连。
 _no_proxy = os.environ.get("NO_PROXY", "")
-_aliyun_domains = "aliyuncs.com,dashscope.aliyuncs.com,.aliyuncs.com,localhost,127.0.0.1"
-if _aliyun_domains not in _no_proxy:
-    new_value = f"{_no_proxy},{_aliyun_domains}" if _no_proxy else _aliyun_domains
+_local_hosts = "localhost,127.0.0.1"
+if _local_hosts not in _no_proxy:
+    new_value = f"{_no_proxy},{_local_hosts}" if _no_proxy else _local_hosts
     os.environ["NO_PROXY"] = new_value
     os.environ["no_proxy"] = new_value
 # ======== 修复结束 ========

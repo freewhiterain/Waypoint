@@ -3,7 +3,8 @@ from datetime import date
 
 import pytest
 
-from app.agents.supervisor import build_itinerary, run_travel_planning
+from app.agents.scheduling import schedule_itinerary
+from app.agents.supervisor import run_travel_planning
 from app.agents.workers.base import TravelWorker
 from app.agents.workers.registry import WorkerRegistry
 from app.schemas.planning import CandidateOption, ResearchTask, TravelRequirement, WorkerResult
@@ -51,7 +52,7 @@ def test_itinerary_reads_candidates_from_attractions_worker():
         options=[CandidateOption(name="Wuhou Shrine", category="attractions")],
     )
 
-    itinerary = build_itinerary(requirement(), [attractions])
+    itinerary, _warnings = schedule_itinerary(requirement(), [attractions])
 
     assert itinerary[0].slots[0].title == "Wuhou Shrine"
 
