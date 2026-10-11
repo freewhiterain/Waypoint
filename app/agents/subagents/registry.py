@@ -14,7 +14,7 @@ from app.agents.subagents.transport import TransportSubagent
 from app.agents.subagents.weather import WeatherSubagent
 from app.schemas.planning import ResearchTask, TaskType, TravelRequirement
 from app.schemas.research import SubagentResponse
-from app.utils.callables import supports_keyword
+from app.utils.callables import supported_kwargs
 
 
 class SubagentRegistry:
@@ -44,13 +44,12 @@ class SubagentRegistry:
                 summary="No registered domain subagent is available.",
                 warnings=["subagent_error:worker_unregistered"],
             )
-        kwargs = {}
-        if event_callback is not None and supports_keyword(worker.run, "event_callback"):
-            kwargs["event_callback"] = event_callback
-        if prior_results is not None and supports_keyword(worker.run, "prior_results"):
-            kwargs["prior_results"] = prior_results
         try:
-            return await worker.run(task, requirement, **kwargs)
+            return await worker.run(
+                task,
+                requirement,
+                **supported_kwargs(worker.run, event_callback=event_callback, prior_results=prior_results),
+            )
         except Exception as exc:
             return SubagentResponse(
                 task_id=task.id,

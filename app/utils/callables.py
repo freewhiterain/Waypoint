@@ -28,3 +28,16 @@ def supports_keyword(callable_obj: Any, keyword: str) -> bool:
         parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in signature.parameters.values()
     )
+
+
+def supported_kwargs(callable_obj: Any, **optional: Any) -> dict[str, Any]:
+    """从可选关键字参数里挑出 callable 接受、且值不为 None 的那些。
+
+    调用方写成 `await fn(a, b, **supported_kwargs(fn, event_callback=cb))`，
+    不用在每个调用点各写一遍"先探测再决定怎么调"的分支。
+    """
+    return {
+        name: value
+        for name, value in optional.items()
+        if value is not None and supports_keyword(callable_obj, name)
+    }

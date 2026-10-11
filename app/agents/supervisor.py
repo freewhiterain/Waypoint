@@ -32,7 +32,7 @@ from app.schemas.planning import (
     WorkerResult,
 )
 from app.schemas.research import EvidenceBoundCandidate, SubagentResponse
-from app.utils.callables import supports_keyword
+from app.utils.callables import supported_kwargs
 from app.utils.logger import app_logger
 
 
@@ -338,13 +338,17 @@ def create_supervisor_graph(
 
         is_mock = False
         response: SubagentResponse | None = None
-        run_kwargs: dict[str, Any] = {}
-        if supports_keyword(registry.run, "event_callback"):
-            run_kwargs["event_callback"] = emit_worker_event
-        if task.dependencies and supports_keyword(registry.run, "prior_results"):
-            run_kwargs["prior_results"] = _worker_results_from_state(state)
         try:
-            raw_result = await registry.run(task, requirement, **run_kwargs)
+            raw_result = await registry.run(
+                task,
+                requirement,
+                **supported_kwargs(
+                    registry.run,
+                    event_callback=emit_worker_event,
+                    # 只有带依赖的任务（交通）需要前一批的结果。
+                    prior_results=_worker_results_from_state(state) if task.dependencies else None,
+                ),
+            )
             response = _coerce_subagent_response(raw_result)
             # 是否来自本地模拟资料只看证据来源，这是 is_mock 的唯一判定口径。
             is_mock = evidence_is_mock(response.evidence)

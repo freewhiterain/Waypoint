@@ -27,7 +27,7 @@ from app.schemas.research import (
     ResearchReport,
     SubagentResponse,
 )
-from app.utils.callables import supports_keyword
+from app.utils.callables import supported_kwargs
 
 
 ToolBuilder = Callable[[TaskType], Awaitable[Iterable[Any]] | Iterable[Any]]
@@ -522,10 +522,14 @@ class DomainSubagent:
             request = request.model_copy(
                 update={"query": self._conflict_query(task.query, conflicts)}
             )
-        kwargs: dict[str, Any] = {"search": search}
-        if event_callback is not None and supports_keyword(self._deep_search, "event_callback"):
-            kwargs["event_callback"] = deep_search_event
-        return await self._deep_search(request, **kwargs)
+        return await self._deep_search(
+            request,
+            search=search,
+            **supported_kwargs(
+                self._deep_search,
+                event_callback=deep_search_event if event_callback is not None else None,
+            ),
+        )
 
     @staticmethod
     def _conflict_query(base_query: str, conflicts: list[ResearchConflict]) -> str:

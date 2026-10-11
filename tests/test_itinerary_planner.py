@@ -11,6 +11,7 @@ from app.agents.itinerary_planner import (
     assign_days,
     check_itinerary,
     plan_itinerary,
+    schedule_by_rules,
 )
 from app.schemas.planning import CandidateOption, TravelRequirement, WorkerResult
 
@@ -120,7 +121,7 @@ def test_checker_flags_opening_hours_and_long_travel_days():
             day.slots[0].model_copy(update={"opening_window": "18:00-23:00", "travel_minutes": 200}),
             *day.slots[1:],
         ]})
-        for day in __import__("app.agents.scheduling", fromlist=["x"]).schedule_itinerary(requirement(days=1), results)[0]
+        for day in schedule_by_rules(requirement(days=1), results)[0]
     ]
 
     codes = {violation.code for violation in check_itinerary(requirement(days=1), results, selection_itinerary)}

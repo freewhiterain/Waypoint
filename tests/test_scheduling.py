@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.agents.scheduling import schedule_itinerary
+from app.agents.itinerary_planner import schedule_by_rules
 from app.schemas.planning import (
     CandidateOption,
     Evidence,
@@ -44,13 +44,14 @@ def test_scheduler_uses_distinct_grounded_places_and_preserves_constraints():
         result("food", [option("Sichuan dinner", "food", 50, "Jinjiang")]),
     ]
 
-    itinerary, warnings = schedule_itinerary(requirement(), results)
+    itinerary, warnings = schedule_by_rules(requirement(), results)
 
     assert len(itinerary) == 2
     assert itinerary[0].slots[0].title == "Panda Base"
     assert itinerary[0].slots[1].title == "Wenshu"
     assert itinerary[0].slots[0].location == "Chenghua"
-    assert itinerary[0].slots[0].travel_minutes == 20
+    # 没有交通子 Agent 给出的真实耗时时，travel_minutes 保持为空，不从候选属性里取。
+    assert itinerary[0].slots[0].travel_minutes is None
     assert itinerary[0].slots[0].opening_window == "09:00-17:00"
     assert itinerary[1].slots[0].title not in {"Panda Base", "Wenshu"}
     assert itinerary[1].notes == ["第2天已无未使用的景点候选。"]

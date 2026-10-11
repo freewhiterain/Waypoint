@@ -28,7 +28,7 @@ class InMemoryTripHistoryRepository:
 
 
 def _extract_visited_attractions(content: dict[str, Any]) -> list[str]:
-    # 只取 morning 时段：app/agents/supervisor.py 的 build_itinerary 固定把景点名放在
+    # 只取 morning 时段：行程编排（app/agents/itinerary_planner.py）当初固定把景点名放在
     # morning 时段、把餐厅名放在 evening 时段（afternoon 是通用占位符，不含真实标题）。
     # 如果这个编排约定以后变了，这里需要跟着调整，否则会漏景点或把餐厅名误记成景点。
     attractions: list[str] = []

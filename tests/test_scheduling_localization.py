@@ -1,6 +1,6 @@
 """行程的用户可见文案必须是中文。
 
-app/agents/scheduling.py 的兜底文案（无候选时的时段标题/描述）
+app/agents/itinerary_planner.py 的兜底文案（无候选时的时段标题/描述）
 会被 app/services/planning.py:render_plan_markdown 直接插进中文正文里：
 
     - **上午**：Flexible local time。No second evidence-backed attraction was available.
@@ -11,7 +11,7 @@ app/agents/scheduling.py 的兜底文案（无候选时的时段标题/描述）
 
 from datetime import date
 
-from app.agents.scheduling import schedule_itinerary
+from app.agents.itinerary_planner import schedule_by_rules
 from app.schemas.planning import CandidateOption, Evidence, TravelRequirement, WorkerResult
 
 
@@ -31,7 +31,7 @@ def _has_latin_words(text: str) -> bool:
 
 
 def test_empty_plan_fallback_slots_are_chinese():
-    itinerary, _warnings = schedule_itinerary(_requirement(), [])
+    itinerary, _warnings = schedule_by_rules(_requirement(), [])
 
     assert itinerary, "没有任何候选时也应产出逐日骨架"
     for day in itinerary:
@@ -63,6 +63,6 @@ def test_candidate_titles_still_pass_through_untouched():
         )
     ]
 
-    itinerary, _warnings = schedule_itinerary(_requirement(days=1), results)
+    itinerary, _warnings = schedule_by_rules(_requirement(days=1), results)
 
     assert itinerary[0].slots[0].title == "IFS Chengdu"

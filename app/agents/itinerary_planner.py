@@ -24,7 +24,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agents.scheduling import schedule_itinerary
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -355,16 +354,22 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
 # ---------------------------------------------------------------- 编排入口
 
 
+def schedule_by_rules(
+    requirement: TravelRequirement,
+    results: list[WorkerResult],
+    costs: TravelCosts | None = None,
+) -> tuple[list[ItineraryDay], list[str]]:
+    """不用 LLM 的完整排程：规则选点 + 算法排程。没有任何候选时每个时段都是兜底文案。"""
+    selection, warnings = _sanitize(select_places_by_rules(requirement, results), requirement, results)
+    return build_itinerary(requirement, results, selection, costs or TravelCosts(results)), warnings
+
+
 async def plan_itinerary(
     requirement: TravelRequirement,
     results: list[WorkerResult],
     *,
     llm: Any | None = None,
 ) -> tuple[list[ItineraryDay], list[str]]:
-    if not _options(results, "attractions") and not _options(results, "food"):
-        # 什么候选都没有时沿用原来的逐日兜底骨架。
-        return schedule_itinerary(requirement, results)
-
     costs = TravelCosts(results)
     warnings: list[str] = []
     feedback: list[Violation] = []
@@ -380,11 +385,11 @@ async def plan_itinerary(
                 llm = None
         by_rules = selection is None
         if by_rules:
-            selection = select_places_by_rules(requirement, results)
-        selection, sanitize_warnings = _sanitize(selection, requirement, results)
-        warnings.extend(sanitize_warnings)
-
-        itinerary = build_itinerary(requirement, results, selection, costs)
+            itinerary, round_warnings = schedule_by_rules(requirement, results, costs)
+        else:
+            selection, round_warnings = _sanitize(selection, requirement, results)
+            itinerary = build_itinerary(requirement, results, selection, costs)
+        warnings.extend(round_warnings)
         feedback = check_itinerary(requirement, results, itinerary)
         # 规则选点不会根据违规原因调整，重选也是同一个结果，只有 LLM 选点才值得再来一轮。
         if not feedback or by_rules:
@@ -402,6 +407,7 @@ __all__ = [
     "build_itinerary",
     "check_itinerary",
     "plan_itinerary",
+    "schedule_by_rules",
     "select_places_by_rules",
     "select_places_with_llm",
 ]

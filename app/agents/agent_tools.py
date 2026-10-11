@@ -9,7 +9,7 @@ from app.agents.factory import create_planning_registry
 from app.schemas.planning import ResearchTask, TaskType, TravelRequirement
 from app.schemas.research import SubagentResponse
 from app.schemas.tools import AgentToolCall, AgentToolName, AgentToolResult
-from app.utils.callables import supports_keyword
+from app.utils.callables import supported_kwargs
 from app.utils.logger import app_logger
 
 
@@ -59,14 +59,11 @@ class AgentToolRegistry:
         )
 
         try:
-            if event_callback is not None and supports_keyword(self.registry.run, "event_callback"):
-                response = await self.registry.run(
-                    task,
-                    requirement,
-                    event_callback=event_callback,
-                )
-            else:
-                response = await self.registry.run(task, requirement)
+            response = await self.registry.run(
+                task,
+                requirement,
+                **supported_kwargs(self.registry.run, event_callback=event_callback),
+            )
         except Exception as exc:
             app_logger.warning(
                 f"Agent tool {call.name} failed: {type(exc).__name__}: {exc}"

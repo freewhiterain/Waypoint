@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.utils.callables import supports_keyword
+from app.utils.callables import supported_kwargs, supports_keyword
 
 
 _CALL_SITES = [
@@ -66,4 +66,21 @@ def test_call_sites_do_not_redefine_the_helper(relative_path):
     assert "def _supports_keyword" not in source, (
         f"{relative_path} 又定义了本地副本；请 import app.utils.callables.supports_keyword"
     )
-    assert "from app.utils.callables import supports_keyword" in source
+    assert "from app.utils.callables import supported_kwargs" in source
+
+
+def test_supported_kwargs_keeps_only_accepted_non_none_values():
+    async def narrow(task, requirement):
+        return None
+
+    async def wide(task, requirement, *, event_callback=None, prior_results=None):
+        return None
+
+    callback = object()
+
+    assert supported_kwargs(narrow, event_callback=callback) == {}
+    assert supported_kwargs(wide, event_callback=callback, prior_results=None) == {"event_callback": callback}
+    assert supported_kwargs(wide, event_callback=callback, prior_results=[]) == {
+        "event_callback": callback,
+        "prior_results": [],
+    }
