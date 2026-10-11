@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.config import settings
 from app.api.sse import SSEEventBuilder, sse
 from app.agents.agent_tools import run_agent_tool
 from app.governance.drafts import load_trip_draft_context
@@ -23,6 +24,7 @@ from app.schemas.message import MessageCreate
 from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
 from app.services.planning import KNOWN_DESTINATIONS
+from app.services.react_agent import build_react_tools, run_react_agent
 from app.services.slots import (
     PostgresSlotRepository,
     apply_slot_update,
@@ -96,6 +98,59 @@ def _context_item(message: Message) -> dict[str, str]:
     if isinstance(extra_info, dict) and extra_info.get("kind"):
         item["kind"] = str(extra_info["kind"])
     return item
+
+
+_ROUTE_ONE_ACTIONS = {"answer_open_question", "recommend_destination", "invoke_agent_tool"}
+
+
+def _react_llm():
+    """线路 1 的 ReAct 用的模型；没配 Key 或初始化失败时返回 None，改走固定流程。"""
+    if not settings.llm_api_key.strip():
+        return None
+    try:
+        from app.agents.llm import get_llm
+
+        return get_llm(temperature=0.3)
+    except Exception:
+        return None
+
+
+async def _react_events(question, context, slots, llm, registry):
+    """跑 ReAct，边跑边产出 ("tool_call" | "tool_result", payload)，最后产出 ("answer", ReactResult)。"""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def on_tool_call(payload):
+        await queue.put(("tool_call", payload))
+
+    async def on_tool_result(payload):
+        await queue.put(("tool_result", payload))
+
+    task = asyncio.create_task(
+        run_react_agent(
+            question,
+            context,
+            slots,
+            llm=llm,
+            tools=build_react_tools(registry),
+            on_tool_call=on_tool_call,
+            on_tool_result=on_tool_result,
+        )
+    )
+    try:
+        while True:
+            getter = asyncio.create_task(queue.get())
+            done, _pending = await asyncio.wait({task, getter}, return_when=asyncio.FIRST_COMPLETED)
+            if getter in done:
+                yield getter.result()
+                continue
+            getter.cancel()
+            break
+        while not queue.empty():
+            yield queue.get_nowait()
+        yield "answer", task.result()
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 async def generate_sse_stream(
@@ -184,6 +239,41 @@ async def generate_sse_stream(
             yield sse(event("tool_call", payload.model_dump()))
             yield sse(event("done"))
             return
+
+        react_llm = _react_llm() if decision.action in _ROUTE_ONE_ACTIONS else None
+        if react_llm is not None:
+            # 线路 1：开放问题、推荐目的地、单项研究都交给 ReAct，由模型自己决定查什么。
+            try:
+                react_result = None
+                async for kind, payload in _react_events(user_message, context, slots, react_llm, registry):
+                    if kind == "answer":
+                        react_result = payload
+                    else:
+                        yield sse(event(kind, payload))
+                answer = react_result.answer
+                if decision.action == "recommend_destination":
+                    slots = remember_suggestions(slots, answer, KNOWN_DESTINATIONS)
+                    await store_slots(slot_repository, conversation_id, slots)
+                async with async_session_maker() as db:
+                    await save_message(
+                        db,
+                        conversation_id,
+                        "assistant",
+                        answer,
+                        {
+                            "action": decision.action,
+                            "react_steps": [
+                                {"tool": step.tool, "arguments": step.arguments, "status": step.outcome.status}
+                                for step in react_result.steps
+                            ],
+                        },
+                    )
+                yield sse(event("token", {"content": answer, "action": decision.action}))
+                yield sse(event("done"))
+                return
+            except Exception as exc:
+                # ReAct 出错不该让这一轮没有回答：退回下面的固定流程。
+                app_logger.warning(f"ReAct 问答失败，改走固定流程: {type(exc).__name__}: {exc}")
 
         if decision.action == "invoke_agent_tool" and decision.tool_call is not None:
             call_id = uuid4().hex
