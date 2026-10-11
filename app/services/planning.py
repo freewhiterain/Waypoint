@@ -236,7 +236,8 @@ def render_plan_markdown(draft: TravelPlanDraft) -> str:
         lines.append("")
     for day in draft.itinerary:
         lines.append(f"## 第{day.day}天 · {day.date.isoformat()}")
-        lines.extend(f"- **天气**：{note.removeprefix('天气：')}" for note in day.notes if note.startswith("天气："))
+        for label in ("天气", "住宿"):
+            lines.extend(f"- **{label}**：{note.removeprefix(label + '：')}" for note in day.notes if note.startswith(label + "："))
         labels = {"morning": "上午", "afternoon": "下午", "evening": "晚上"}
         for slot in day.slots:
             lines.append(f"- **{labels[slot.period]}**：{slot.title}。{slot.description}")

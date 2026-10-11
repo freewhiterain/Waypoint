@@ -24,6 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.places.catalog import straight_line_km
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -68,6 +69,7 @@ def _options(results: list[WorkerResult], worker: str) -> list[CandidateOption]:
 
 
 WEATHER_NOTE_PREFIX = "天气："
+HOTEL_NOTE_PREFIX = "住宿："
 _WEATHER_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})：")
 
 
@@ -99,31 +101,53 @@ def _trip_weather(requirement: TravelRequirement, results: list[WorkerResult]) -
     return {day: forecast[iso] for day, iso in days.items() if iso in forecast}
 
 
+def _minutes_from_km(distance_km: float) -> int:
+    """直线距离换算成比较远近用的内部代价：起步 5 分钟，市内每公里约 3.5 分钟。"""
+    return round(5 + distance_km * 3.5)
+
+
 class TravelCosts:
-    """地点之间的交通代价：优先真实分钟数，其次按区粗估。"""
+    """地点之间的交通代价：优先真实分钟数，其次按坐标直线距离估，最后按区粗估。"""
 
     def __init__(self, results: list[WorkerResult]):
         self._minutes: dict[frozenset[str], int] = {}
         self._estimate: dict[frozenset[str], int] = {}
+        self._coordinates: dict[str, tuple[float, float]] = {}
         for leg in _options(results, "transport"):
             attributes = leg.attributes
             key = frozenset((str(attributes.get("from_id")), str(attributes.get("to_id"))))
             if isinstance(attributes.get("minutes"), int):
                 self._minutes[key] = attributes["minutes"]
             self._estimate[key] = _PROXIMITY_COST.get(str(attributes.get("proximity")), _PROXIMITY_COST["unknown"])
+        # 交通子 Agent 只给前几个候选算路线；其余地点只要有坐标，也能比较远近。
+        for worker in ("attractions", "food", "hotel"):
+            for option in _options(results, worker):
+                latitude, longitude = option.attributes.get("latitude"), option.attributes.get("longitude")
+                if isinstance(latitude, (int, float)) and isinstance(longitude, (int, float)):
+                    self._coordinates[option.id] = (float(latitude), float(longitude))
 
     def minutes(self, first: str | None, second: str | None) -> int | None:
         if first is None or second is None or first == second:
             return None
         return self._minutes.get(frozenset((first, second)))
 
+    def known(self, first: str | None, second: str | None) -> int | None:
+        """有依据的耗时：真实分钟数，或由坐标直线距离换算的估计；两者都没有时返回 None。"""
+        if first is None or second is None or first == second:
+            return None
+        key = frozenset((first, second))
+        if key in self._minutes:
+            return self._minutes[key]
+        if first in self._coordinates and second in self._coordinates:
+            return _minutes_from_km(straight_line_km(self._coordinates[first], self._coordinates[second]))
+        return None
+
     def cost(self, first: str | None, second: str | None) -> int:
         if first is None or second is None or first == second:
             return 0
         key = frozenset((first, second))
-        if key in self._minutes:
-            return self._minutes[key]
-        return self._estimate.get(key, _PROXIMITY_COST["unknown"])
+        known = self.known(first, second)
+        return known if known is not None else self._estimate.get(key, _PROXIMITY_COST["unknown"])
 
 
 # ---------------------------------------------------------------- 1. 选点
@@ -133,9 +157,12 @@ def _option_digest(option: CandidateOption) -> dict[str, Any]:
     digest = {"id": option.id, "name": option.name, "description": option.description[:160]}
     if option.estimated_cost is not None:
         digest["estimated_cost"] = option.estimated_cost
-    for key in ("location", "district", "opening_hours"):
+    for key in ("type", "location", "district", "opening_hours"):
         if option.attributes.get(key):
             digest[key] = option.attributes[key]
+    latitude, longitude = option.attributes.get("latitude"), option.attributes.get("longitude")
+    if isinstance(latitude, (int, float)) and isinstance(longitude, (int, float)):
+        digest["position"] = [round(latitude, 3), round(longitude, 3)]
     return digest
 
 
@@ -161,6 +188,8 @@ async def select_places_with_llm(
                 f"每天最多 {ATTRACTIONS_PER_DAY} 个景点、1 顿晚餐；景点总数不超过天数×{ATTRACTIONS_PER_DAY}。"
                 "按用户偏好和人数取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
                 "选一个落脚酒店（hotel_id），尽量靠近所选景点。顺序和分天由后续算法决定，不需要你排。"
+                "候选里的 position 是 [纬度, 经度]，可以用来判断远近：晚餐选在所选景点附近的，"
+                "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个。"
             ),
         },
         {
@@ -360,6 +389,10 @@ def _opening_minutes(window: str | None) -> tuple[int, int] | None:
 
 def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay]) -> list[Violation]:
     violations: list[Violation] = []
+    costs = TravelCosts(results)
+    ids_by_name = {
+        option.name: option.id for worker in ("attractions", "food") for option in _options(results, worker)
+    }
     for day in itinerary:
         for slot in day.slots:
             window = _opening_minutes(slot.opening_window)
@@ -377,6 +410,14 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
         if travel > MAX_DAILY_TRAVEL_MINUTES:
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天路上耗时约 {travel} 分钟，超过 {MAX_DAILY_TRAVEL_MINUTES} 分钟。"))
+            continue
+        # 没有真实耗时的路段按坐标估算：防止把相隔几十公里的地点排进同一天。
+        stops = [ids_by_name[slot.title] for slot in day.slots if slot.title in ids_by_name]
+        estimated = sum(costs.known(first, second) or 0 for first, second in zip(stops, stops[1:]))
+        if estimated > MAX_DAILY_TRAVEL_MINUTES:
+            names = "、".join(slot.title for slot in day.slots if slot.title in ids_by_name)
+            violations.append(Violation(code="daily_travel",
+                                        message=f"第{day.day}天的{names}相距太远，路上估计要 {estimated} 分钟以上。"))
     return violations
 
 
@@ -403,6 +444,7 @@ async def plan_itinerary(
     warnings: list[str] = []
     feedback: list[Violation] = []
     itinerary: list[ItineraryDay] = []
+    hotel: CandidateOption | None = None
     for _round in range(MAX_ROUNDS):
         selection = None
         if llm is not None:
@@ -415,15 +457,20 @@ async def plan_itinerary(
         by_rules = selection is None
         if by_rules:
             itinerary, round_warnings = schedule_by_rules(requirement, results, costs)
+            # 规则选点固定用第一个住宿候选（见 select_places_by_rules）。
+            hotel = next(iter(_options(results, "hotel")), None)
         else:
             selection, round_warnings = _sanitize(selection, requirement, results)
             itinerary = build_itinerary(requirement, results, selection, costs)
+            hotel = next((option for option in _options(results, "hotel") if option.id == selection.hotel_id), None)
         warnings.extend(round_warnings)
         feedback = check_itinerary(requirement, results, itinerary)
         # 规则选点不会根据违规原因调整，重选也是同一个结果，只有 LLM 选点才值得再来一轮。
         if not feedback or by_rules:
             break
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
+    if hotel is not None and itinerary:
+        itinerary[0].notes.insert(0, f"{HOTEL_NOTE_PREFIX}{hotel.name}。{hotel.description}")
     for day, text in _trip_weather(requirement, results).items():
         if day <= len(itinerary):
             itinerary[day - 1].notes.insert(0, f"{WEATHER_NOTE_PREFIX}{text}")

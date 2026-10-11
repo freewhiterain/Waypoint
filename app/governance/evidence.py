@@ -255,7 +255,7 @@ class EvidenceGovernanceService:
     def _is_external(evidence: Evidence) -> bool:
         metadata = evidence.metadata
         source_type = str(metadata.get("source_type", "")).strip().lower()
-        if source_type in {"mock_markdown", "local", "local_rag", "rag", "synthetic"}:
+        if source_type in {"mock_markdown", "local", "local_rag", "rag", "synthetic", "dataset"}:
             return False
         if metadata.get("is_external") is True:
             return True

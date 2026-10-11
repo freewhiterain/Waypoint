@@ -65,13 +65,18 @@ def create_default_subagent_registry(
     build_tools: ToolBuilder | None = build_subagent_tools,
     llm: Any | None = None,
     deep_search: Callable[..., Any] | None = None,
+    place_catalog: Any | None = None,
 ) -> SubagentRegistry:
-    """Create the registry with one subagent per research domain."""
+    """Create the registry with one subagent per research domain.
+
+    place_catalog 传入后，景点、美食、住宿在地点库覆盖的城市直接取结构化候选。
+    """
 
     shared_kwargs = {
         "tool_builder": build_tools,
         "llm": llm,
         "deep_search": deep_search,
+        "catalog": place_catalog,
     }
     return SubagentRegistry(
         {

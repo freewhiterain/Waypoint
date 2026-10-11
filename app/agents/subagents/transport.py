@@ -23,7 +23,7 @@ from app.schemas.planning import Evidence, ResearchTask, TravelRequirement, Work
 from app.schemas.research import EvidenceBoundCandidate, SubagentResponse
 
 # 地点太多时两两组合会爆炸（n 个地点 n(n-1)/2 段），每类只取前几个候选。
-PLACE_LIMITS = {"attractions": 8, "hotel": 2, "food": 4}
+PLACE_LIMITS = {"attractions": 10, "hotel": 2, "food": 5}
 
 
 class TransportSubagent(DomainSubagent):

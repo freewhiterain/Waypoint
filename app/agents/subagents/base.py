@@ -35,6 +35,7 @@ DeepSearchRunner = Callable[..., Awaitable[ResearchReport]]
 EventCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 # 证据校验时忽略的虚词：模型改写语序时这些词的增删不改变事实内容。
+PLACE_CATALOG_SOURCE = "ChinaTravel 地点库"
 _WORKER_LABELS = {"attractions": "景点", "hotel": "住宿", "food": "美食", "weather": "天气", "transport": "交通"}
 _STOPWORDS = frozenset(
     {
@@ -80,9 +81,11 @@ class DomainSubagent:
         tool_builder: ToolBuilder | None = None,
         deep_search: DeepSearchRunner | None = None,
         llm: Any | None = None,
+        catalog: Any | None = None,
         **providers: Any,
     ) -> None:
         self.worker = worker
+        self.catalog = catalog
         self.provider_order = tuple(provider_order)
         self.policy = ToolPolicy.for_worker(worker)
         self.allow_deep_search = self.policy.allow_deep_research
@@ -111,6 +114,10 @@ class DomainSubagent:
                 task,
                 f"Task type {task.task_type} does not match subagent {self.worker}.",
             )
+
+        catalog_response = await self._catalog_response(task, requirement, event_callback)
+        if catalog_response is not None:
+            return catalog_response
 
         warnings: list[str] = []
         evidence: list[Evidence] = []
@@ -219,6 +226,61 @@ class DomainSubagent:
             evidence=evidence,
             research_report=research_report,
             warnings=list(dict.fromkeys(warnings)),
+        )
+
+    async def _catalog_response(
+        self,
+        task: ResearchTask,
+        requirement: TravelRequirement,
+        event_callback: EventCallback | None,
+    ) -> SubagentResponse | None:
+        """地点库覆盖这个城市时，直接用里面的结构化数据作候选，不经过检索和模型提取。"""
+        if self.catalog is None or self.worker not in ("attractions", "food", "hotel"):
+            return None
+        records = self.catalog.shortlist(requirement, self.worker)
+        if not records:
+            return None
+        if event_callback is not None:
+            await event_callback("subagent_tool_call", {"tool_name": "place_catalog", "round_number": 1})
+        evidence: list[Evidence] = []
+        candidates: list[EvidenceBoundCandidate] = []
+        for record in records:
+            evidence_id = f"{task.id}-{record.id}"
+            description = record.describe()
+            evidence.append(
+                Evidence(
+                    id=evidence_id,
+                    content=f"{record.name}：{description}",
+                    source=PLACE_CATALOG_SOURCE,
+                    confidence=0.8,
+                    metadata={"source_type": "dataset", "provider": "place_catalog", "city": record.city},
+                )
+            )
+            candidates.append(
+                EvidenceBoundCandidate(
+                    id=record.id,
+                    name=record.name,
+                    category=self.worker,
+                    description=description,
+                    estimated_cost=record.price,
+                    attributes=record.attributes(),
+                    evidence_ids=[evidence_id],
+                )
+            )
+        if event_callback is not None:
+            await event_callback(
+                "subagent_tool_completed",
+                {"tool_name": "place_catalog", "round_number": 1, "status": "sufficient", "evidence_count": len(evidence)},
+            )
+        label = _WORKER_LABELS.get(self.worker, self.worker)
+        return SubagentResponse(
+            task_id=task.id,
+            worker=self.worker,
+            status="completed",
+            summary=f"从地点库取出 {len(candidates)} 个{label}候选。",
+            candidates=candidates,
+            evidence=evidence,
+            warnings=[f"{label}的价格和营业时间来自数据集快照，请以实际为准。"],
         )
 
     def build_query(self, task: ResearchTask, requirement: TravelRequirement) -> str:

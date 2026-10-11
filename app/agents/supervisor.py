@@ -167,6 +167,11 @@ class _LLMItinerary(BaseModel):
     days: list[ItineraryDay] = Field(default_factory=list)
 
 
+# 成文时给模型看的候选名单长度：要盖住地点库的候选数，否则模型会把排进行程的地点
+# 说成"未在研究结果中出现"。交通段数量多、名称长，不需要全给。
+_DIGEST_OPTIONS = 30
+
+
 async def synthesize_itinerary_with_llm(
     requirement: TravelRequirement,
     results: list[WorkerResult],
@@ -180,7 +185,7 @@ async def synthesize_itinerary_with_llm(
 
         evidence_digest = "\n".join(
             f"[{result.worker}] {result.summary} "
-            + "；".join(option.name for option in result.options[:5])
+            + "；".join(option.name for option in result.options[:_DIGEST_OPTIONS])
             + ("；证据：" + "；".join(item.content[:120] for item in result.evidence[:3]) if result.evidence else "")
             for result in results
         )

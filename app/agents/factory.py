@@ -25,8 +25,10 @@ def create_planning_registry() -> tuple[Any, str | None]:
     """
     from app.agents.subagents.registry import create_default_subagent_registry
 
+    from app.places.catalog import get_place_catalog
+
     llm = _planning_llm()
-    return create_default_subagent_registry(llm=llm), None if llm is not None else DEGRADED_PLANNING_REASON
+    return create_default_subagent_registry(llm=llm, place_catalog=get_place_catalog()), None if llm is not None else DEGRADED_PLANNING_REASON
 
 
 async def run_travel_planning(requirement, **kwargs):

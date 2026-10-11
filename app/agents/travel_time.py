@@ -94,6 +94,32 @@ class DistrictEstimateProvider:
         return "same_district" if origin.district == target.district else "different_district"
 
 
+class StraightLineProvider:
+    """两地都有坐标、但没有路线数据时：给出直线距离，不给分钟数。"""
+
+    name = "straight_line"
+
+    async def legs(self, city: str, pairs: Sequence[tuple[Place, Place]]) -> list[TravelLeg]:
+        from app.places.catalog import straight_line_km
+
+        legs: list[TravelLeg] = []
+        for origin, target in pairs:
+            if None in (origin.latitude, origin.longitude, target.latitude, target.longitude):
+                continue
+            distance = straight_line_km((origin.latitude, origin.longitude), (target.latitude, target.longitude))
+            legs.append(
+                TravelLeg(
+                    from_id=origin.id,
+                    to_id=target.id,
+                    from_name=origin.name,
+                    to_name=target.name,
+                    distance_km=round(distance, 1),
+                    source=self.name,
+                )
+            )
+        return legs
+
+
 class TravelTimeService:
     def __init__(self, providers: Iterable[TravelTimeProvider]):
         self.providers = list(providers)
@@ -119,7 +145,7 @@ class TravelTimeService:
 
 
 def default_travel_time_service() -> TravelTimeService:
-    """图谱缓存 → 高德（需 ENABLE_EXTERNAL_TOOLS 且配置 AMAP_API_KEY）→ 按区粗估。"""
+    """图谱缓存 → 高德（需 ENABLE_EXTERNAL_TOOLS 且配置 AMAP_API_KEY）→ 坐标直线距离 → 按区粗估。"""
     from app.agents.route_graph import AmapRouteProvider, RouteGraphProvider, RouteGraphStore
     from app.config import settings
 
@@ -127,7 +153,7 @@ def default_travel_time_service() -> TravelTimeService:
     providers: list[TravelTimeProvider] = [RouteGraphProvider(store)]
     if settings.enable_external_tools and settings.amap_api_key:
         providers.append(AmapRouteProvider(store=store))
-    providers.append(DistrictEstimateProvider())
+    providers.extend([StraightLineProvider(), DistrictEstimateProvider()])
     return TravelTimeService(providers)
 
 
@@ -163,7 +189,9 @@ def describe_leg(leg: TravelLeg, origin: Place, target: Place) -> str:
             parts.append(f"{leg.distance_km:.1f} 公里")
         if leg.mode:
             parts.append(leg.mode)
-        return f"{origin.name} → {target.name}：{'，'.join(parts)}（来源：{leg.source}）。"
+        return f"{origin.name} → {target.name}：{'，'.join(parts)}。"
+    if leg.distance_km is not None:
+        return f"{origin.name}与{target.name}直线距离约 {leg.distance_km:.1f} 公里；具体耗时需实时确认。"
     if leg.proximity == "same_district":
         return f"{origin.name}与{target.name}同在{origin.district}，通常距离较近；具体耗时需实时确认。"
     if leg.proximity == "different_district":
@@ -177,6 +205,7 @@ def describe_leg(leg: TravelLeg, origin: Place, target: Place) -> str:
 __all__ = [
     "DistrictEstimateProvider",
     "Place",
+    "StraightLineProvider",
     "TravelLeg",
     "TravelTimeProvider",
     "TravelTimeService",

@@ -205,6 +205,8 @@ class AmapRouteProvider:
     """用高德"距离测量"接口算驾车耗时：一次请求可算多个起点到同一终点。"""
 
     name = "amap"
+    attempts = 3
+    retry_delay_seconds = 1.0
 
     def __init__(
         self,
@@ -293,17 +295,23 @@ class AmapRouteProvider:
         now = datetime.now(timezone.utc)
         for target_id, origins in by_target.items():
             target = targets[target_id]
-            try:
-                data = await self._request(
-                    AMAP_DISTANCE_URL,
-                    {
-                        "origins": "|".join(_lnglat(coordinates[origin.id]) for origin in origins),
-                        "destination": _lnglat(coordinates[target_id]),
-                        "type": 1,
-                    },
-                )
-            except Exception as exc:
-                app_logger.warning(f"高德距离测量失败 → {target.name}: {type(exc).__name__}: {exc}")
+            params = {
+                "origins": "|".join(_lnglat(coordinates[origin.id]) for origin in origins),
+                "destination": _lnglat(coordinates[target_id]),
+                "type": 1,
+            }
+            data = None
+            # 一次规划会连发十几个请求，个人 Key 每秒只允许几次，被限流时等一下再试。
+            for attempt in range(self.attempts):
+                try:
+                    data = await self._request(AMAP_DISTANCE_URL, params)
+                    break
+                except Exception as exc:
+                    if attempt + 1 == self.attempts:
+                        app_logger.warning(f"高德距离测量失败 → {target.name}: {type(exc).__name__}: {exc}")
+                    else:
+                        await asyncio.sleep(self.retry_delay_seconds)
+            if data is None:
                 continue
             for row in data.get("results") or []:
                 try:
