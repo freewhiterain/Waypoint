@@ -22,15 +22,16 @@ LLM_API_KEY=sk-你的模型APIKey         # 必填
 LLM_MODEL=deepseek-v4-flash           # 默认值，按供应商调整
 LLM_BASE_URL=https://api.deepseek.com # 默认值，OpenAI 兼容接口即可
 LANGSMITH_API_KEY=你的LangSmithKey    # 推荐
-AMAP_API_KEY=你的高德Key              # 第7章需要
-TAVILY_API_KEY=你的TavilyKey          # 第7章需要
+ENABLE_EXTERNAL_TOOLS=true            # 打开后才会调用高德和联网搜索
+AMAP_API_KEY=你的高德Key              # 天气、地点间耗时
+TAVILY_API_KEY=你的TavilyKey          # 联网搜索
 ```
 
 DeepSeek 注册：https://platform.deepseek.com/
 
 对话模型只要求 OpenAI 兼容接口，换供应商改这三个变量即可，不用动代码。
 注意 `LLM_DISABLE_THINKING`：DeepSeek 的 thinking 模式不支持强制 `tool_choice`，
-而结构化输出正是靠它，保持 `true` 才能让路由、需求抽取、Worker 分析和行程合成
+而结构化输出正是靠它，保持 `true` 才能让路由、需求抽取、子 Agent 分析和行程合成
 拿到结构化结果。
 
 ### 第一步之二：启动本地 Ollama（Embedding 用）
@@ -101,7 +102,8 @@ python app/main.py
 ```
 app/
 ├── core/          # Checkpointer、Store
-├── agents/        # 对话协调器、Supervisor 图、Planner、Workers
+├── agents/        # Supervisor 图、子 Agent、排日程、交通耗时
+├── services/      # 主 Agent（意图 + 槽位）、ReAct 问答、需求提取
 ├── governance/    # 事件、审批、偏好、行程草稿仓库
 ├── rag/           # 混合检索、向量存储
 ├── mcp_core/      # MCP 服务器和客户端
@@ -119,20 +121,38 @@ LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · ChromaD
 
 ## 当前实现状态
 
-每轮消息先由 Main Agent 路由：旅行规划进入表单 Tool，开放旅行问题进入 RAG，其余消息直接对话。新会话会主动询问是否需要规划旅行。
+### 对话：两条线路 + 三个槽位
 
-- 表单通过 Tool Call / Tool Result 交互，必须收集目的地、出发日期和旅行天数，不使用默认日期或默认天数。
-- 目的地未定时可暂停表单并请求 RAG 推荐；选择城市后恢复原表单状态。
-- 只有三项必填字段完整后才调用 Supervisor。Supervisor 调度景点、天气、交通、住宿和美食五类 Worker。
-- Worker 的实时数据源设计暂缓；未配置可用数据源时必须明确降级，不生成虚构事实。
-- **当前数据阶段（Phase 2）：仅成都 + 本地模拟 Markdown。** `data/documents/{attractions,weather,transport,accommodation,food}/chengdu.md` 是唯一的知识来源，不接入天气、地图、航班、铁路、酒店或餐厅的真实 API。Markdown 只是知识库原料，不是 Worker 的直接输出：每个 Worker 先按目的地和职责类别调用 `LocalKnowledgeService.search_destination` 做 RAG 检索，再把证据交给 `analyze_worker_evidence` 做结构化分析；没有证据支持的候选会被丢弃，不允许编造价格、班次、营业状态或天气事实。`WorkerResult.is_mock=True` 标记结果来自本地模拟资料，前端和草稿会保留该标记与证据来源。真实数据源接入和新的检索模式属于后续阶段。
-- **本地知识图谱（轻量 GraphRAG）**：离线脚本 `scripts/build_knowledge_graph.py`
-  从本地 Markdown 资料中抽取实体和"位于/临近"关系，写入 `knowledge_entity`/
-  `knowledge_relation` 两张表；`attractions`、`hotel` 两个 Worker 会额外查询
-  这层关系图，把结果作为 `source_type="graph_relation"` 的证据与文档证据合并
-  使用。抽取只在离线脚本里发生，未配置 LLM 时仅产出规则抽取结果，不阻塞任何
-  请求路径；图为空或查询异常时该 Worker 的行为与没有图谱时完全一致。
-  `weather`/`transport`/`food` 三个 Worker 暂未接入图证据。
+每一轮消息先由主 Agent 调用一次模型，同时得到两样东西：这句话的意图，以及从这句话里能填的槽位。
+
+- **三个必填槽位**：目的地、出发日期、天数。另外还会记人数、出发地、兴趣、饮食偏好。槽位存在会话上（`conversation.extra_info["trip_slots"]`），不管这一轮走哪条线路都会累积，前面聊到的信息在后面规划时都能用上。
+- **模型填的值要过一遍代码校验**（`app/services/slots.py`）：目的地必须是用户说过的，或是用户明确接受的推荐；"国庆""春节"这类假期词不会被换算成日期；天数必须有"数字 + 时间单位"作依据。校验不过的值直接丢弃。
+- **线路 1：问答**（开放问题、推荐目的地、单项研究）。走 ReAct 循环（`app/services/react_agent.py`），模型自己决定查什么，最多 4 轮工具调用。三个只读工具：查本地旅行资料、对某城市某方面做专项研究、查同城几个地点之间的交通耗时。
+- **线路 2：规划**。用户想规划时：三个槽位有缺的，表单只问缺的那几项；三个都齐了，先显示"将为你规划：目的地 · 日期 · 天数"，用户确认后才开始。
+- 没配 `LLM_API_KEY` 或模型出错时，意图判断退回关键词规则，槽位退回正则提取，线路 1 退回固定的检索问答。
+
+### 规划：四个阶段
+
+```
+planner → dispatch ⇄ run_worker → route_planner → synthesize
+```
+
+1. **研究**。五个子 Agent（`app/agents/subagents/`）分两批跑：景点、住宿、美食、天气先跑；交通后跑，因为它要用前面查到的地点。每个子 Agent 先取证据，再让模型做结构化分析；证据不支持的地点整条丢弃，证据不支持的描述、价格、属性只去掉那一项。
+2. **交通**。交通子 Agent 查的是城市内的交通：把景点、住宿、餐饮两两配对，算出每一段的耗时和距离。数据来源按顺序是：交通图谱（表 `travelroute`）→ 高德 → 按"是否同一个区"粗略判断。高德查到的结果会写回图谱，下次直接用。没有真实数据时只给"同区 / 跨区"的判断，不编分钟数。
+3. **排日程**（`app/agents/itinerary_planner.py`）。模型从候选里按 id 选点、选落脚的住宿；分天和先后顺序由算法按交通耗时排；排完检查开放时间和每天的路上时间，不合格就把原因反馈给模型重选，最多 3 轮。没配模型时用规则选点。
+4. **成文**。模型在排好的行程上改写每个时段的描述，不能更换地点或调换顺序。每天的天气直接取自天气证据，显示在当天行程的第一行。
+
+### 数据来源
+
+- **本地资料**：`data/documents/` 下的 Markdown，目前只有成都有完整资料，而且是开发用的模拟数据（结果里 `is_mock=True`）。其他城市没有景点资料，行程里会是"自由活动"。
+- **高德**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `AMAP_API_KEY`）：天气预报、地点之间的驾车耗时和距离。
+- **联网搜索**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `TAVILY_API_KEY`）：用户要求"深入研究"时使用。
+- **本地知识图谱**：离线脚本 `scripts/build_knowledge_graph.py` 从本地资料里抽取实体和"位于 / 临近"关系，写入 `knowledgeentity`、`knowledgerelation` 两张表；景点和住宿两个子 Agent 会把这层关系作为额外证据。交通图谱 `travelroute` 的两端也是这里的实体。
+- 没有可用数据源时，系统会明确说明查不到，不生成虚构的班次、价格、营业时间或天气。
+
+### 其他
+
+- 预算功能已整体移除，等重新设计。候选上的价格字段 `estimated_cost` 保留。
 - 行程草稿常驻（`models/draft.py` + `governance/drafts.py`）：每个会话一份可增量编辑的草稿，版本递增；正式行程仍需审批落库。
 - Hybrid RAG：稳定文档/切片 ID、BM25、Dense、RRF、相关性重排和父文档回溯。
 - Evidence：来源、URL、查询时间、有效期、置信度和冲突检查。
@@ -140,8 +160,6 @@ LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · ChromaD
 - LangGraph Checkpointer、任务事件持久化（含 task_failed）和用户隔离。
 - 用户明确批准后才写入长期偏好或覆盖正式行程。
 - 不提供购票、预订、支付、退款、取消、改签或外部消息发送。
-
-没有配置实时数据源时，系统会明确说明数据不可用，不生成虚构班次、价格、库存或天气。旧 Handoffs 状态机与交通 Subagents 已退役。
 
 ## 关键配置
 
@@ -155,7 +173,9 @@ LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · ChromaD
 
 ## 主要接口
 
-- `POST /api/v1/chat/stream/{conversation_id}`：兼容旧客户端的 SSE 对话。
+- `POST /api/v1/chat/stream/{conversation_id}`：SSE 对话。每一轮在这里判断意图、填槽位。
+- `POST /api/v1/chat/tools/{call_id}/result`：提交需求表单或确认结果，触发规划并以 SSE 返回行程。
+- `GET /api/v1/drafts/{conversation_id}`：读取会话当前的行程草稿。
 - `POST /api/v1/tasks`：提交结构化旅行需求并执行 Supervisor 规划。
 - `GET /api/v1/tasks/{task_id}`：查询任务状态。
 - `GET /api/v1/tasks/{task_id}/events`：读取持久化任务事件。
