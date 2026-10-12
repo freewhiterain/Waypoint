@@ -219,3 +219,39 @@ def test_checker_flags_a_day_whose_stops_are_far_apart_by_coordinates():
 
     assert [violation.code for violation in violations] == ["daily_travel"]
     assert "相距太远" in violations[0].message
+
+
+def test_checker_allows_a_day_trip_out_of_town_followed_by_dinner_back_in_the_city():
+    day = ItineraryDay(day=1, date=date(2026, 11, 14), slots=[
+        TimeSlot(period="morning", title="都江堰"),
+        TimeSlot(period="afternoon", title="青城山"),
+        TimeSlot(period="evening", title="城里的餐厅"),
+    ])
+
+    assert check_itinerary(requirement(days=1), _results(), [day]) == []
+
+
+def _plan(names, **windows):
+    from app.agents.itinerary_planner import PlaceSelection, SelectedPlace, build_itinerary
+
+    results = _results()
+    for option in results[0].options:
+        if option.name in windows:
+            option.attributes["opening_hours"] = windows[option.name]
+    selection = PlaceSelection(hotel_id="市中心酒店", attractions=[SelectedPlace(id=name) for name in names])
+    return build_itinerary(requirement(days=len(names)), results, selection, TravelCosts(results))
+
+
+def test_far_apart_places_are_not_forced_into_the_same_day():
+    itinerary = _plan(["武侯祠", "都江堰"])
+
+    assert [slot.title for slot in itinerary[0].slots[:2]] == ["武侯祠", "自由活动"]
+    assert [slot.title for slot in itinerary[1].slots[:2]] == ["都江堰", "自由活动"]
+
+
+def test_late_opening_place_is_moved_to_the_afternoon():
+    swapped = _plan(["武侯祠", "人民公园"], 武侯祠="12:00-22:00")
+    assert {slot.period: slot.title for slot in swapped[0].slots[:2]} == {"morning": "人民公园", "afternoon": "武侯祠"}
+
+    alone = _plan(["武侯祠"], 武侯祠="12:00-22:00")
+    assert [(slot.period, slot.title) for slot in alone[0].slots[:2]] == [("morning", "自由活动"), ("afternoon", "武侯祠")]

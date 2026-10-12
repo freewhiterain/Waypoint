@@ -37,6 +37,8 @@ from app.utils.logger import app_logger
 MAX_ROUNDS = 3
 ATTRACTIONS_PER_DAY = 2
 MAX_DAILY_TRAVEL_MINUTES = 180
+# 同一天两个景点之间最多能接受的路程（分钟）。
+MAX_HOP_MINUTES = 75
 # 没有真实耗时时用于比较远近的内部代价（分钟量级），不会展示给用户。
 _PROXIMITY_COST = {"same_district": 20, "unknown": 35, "different_district": 50}
 _OPENING_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至到]\s*(\d{1,2}):(\d{2})")
@@ -289,6 +291,9 @@ def assign_days(
         while remaining and len(day_places) < ATTRACTIONS_PER_DAY:
             anchor = day_places[-1] if day_places else hotel_id
             nearest = min(remaining, key=lambda place_id: (costs.cost(anchor, place_id), remaining.index(place_id)))
+            # 当天已经有景点时，离它太远的不硬凑进同一天：这个时段宁可空着，远的留给后面的日子。
+            if day_places and costs.cost(anchor, nearest) > MAX_HOP_MINUTES:
+                break
             day_places.append(nearest)
             remaining.remove(nearest)
 
@@ -325,15 +330,21 @@ def build_itinerary(
     for index, place_ids in enumerate(day_plans):
         slots: list[TimeSlot] = []
         previous = selection.hotel_id
-        for period, place_id in zip(("morning", "afternoon"), place_ids):
-            slots.append(_slot(period, options[place_id], costs.minutes(previous, place_id)))
-            previous = place_id
-        if len(place_ids) < 1:
-            slots.append(TimeSlot(period="morning", title=f"{requirement.destination}分区自由活动",
-                                  description="该时段没有留下带证据的景点候选。"))
-        if len(place_ids) < 2:
-            slots.append(TimeSlot(period="afternoon", title="自由活动",
-                                  description="没有第二个带证据的景点候选可安排。"))
+        periods = _assign_periods([options[place_id] for place_id in place_ids])
+        for period in ("morning", "afternoon"):
+            option = periods.get(period)
+            if option is not None:
+                slots.append(_slot(period, option, costs.minutes(previous, option.id)))
+                previous = option.id
+            elif period == "morning" and not periods:
+                slots.append(TimeSlot(period="morning", title=f"{requirement.destination}分区自由活动",
+                                      description="该时段没有留下带证据的景点候选。"))
+            elif period == "morning":
+                slots.append(TimeSlot(period="morning", title="自由活动",
+                                      description="当天的景点开门较晚，安排在下午；上午可以自由安排。"))
+            else:
+                slots.append(TimeSlot(period="afternoon", title="自由活动",
+                                      description="没有第二个带证据的景点候选可安排。"))
 
         dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs)
         if dinner_id is not None:
@@ -352,6 +363,29 @@ def build_itinerary(
             )
         )
     return itinerary
+
+
+def _fits(option: CandidateOption, period: str) -> bool:
+    """景点的开放时间是否适合这个时段；没有开放时间的一律算适合。"""
+    window = _opening_minutes(str(option.attributes.get("opening_hours") or ""))
+    if window is None:
+        return True
+    latest_open, earliest_close = _PERIOD_WINDOWS[period]
+    return (latest_open is None or window[0] <= latest_open) and (earliest_close is None or window[1] >= earliest_close)
+
+
+def _assign_periods(places: list[CandidateOption]) -> dict[str, CandidateOption]:
+    """按路程排好顺序的当天景点 → 上午 / 下午。开放时间对不上时调换，或者把唯一的景点放到下午。"""
+    if len(places) >= 2:
+        first, second = places[0], places[1]
+        if not (_fits(first, "morning") and _fits(second, "afternoon")) and _fits(second, "morning") and _fits(first, "afternoon"):
+            first, second = second, first
+        return {"morning": first, "afternoon": second}
+    if len(places) == 1:
+        only = places[0]
+        late = not _fits(only, "morning") and _fits(only, "afternoon")
+        return {"afternoon" if late else "morning": only}
+    return {}
 
 
 def _pick_dinner(pool: list[str], used: set[str], previous: str | None, costs: TravelCosts) -> str | None:
@@ -411,11 +445,13 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天路上耗时约 {travel} 分钟，超过 {MAX_DAILY_TRAVEL_MINUTES} 分钟。"))
             continue
-        # 没有真实耗时的路段按坐标估算：防止把相隔几十公里的地点排进同一天。
-        stops = [ids_by_name[slot.title] for slot in day.slots if slot.title in ids_by_name]
+        # 没有真实耗时的路段按坐标估算：防止把相隔几十公里的景点排进同一天。
+        # 只看景点之间；去郊外玩一天再回城里吃晚饭是正常安排，不算违规。
+        visited = [slot for slot in day.slots if slot.period != "evening" and slot.title in ids_by_name]
+        stops = [ids_by_name[slot.title] for slot in visited]
         estimated = sum(costs.known(first, second) or 0 for first, second in zip(stops, stops[1:]))
         if estimated > MAX_DAILY_TRAVEL_MINUTES:
-            names = "、".join(slot.title for slot in day.slots if slot.title in ids_by_name)
+            names = "、".join(slot.title for slot in visited)
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天的{names}相距太远，路上估计要 {estimated} 分钟以上。"))
     return violations

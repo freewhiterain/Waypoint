@@ -30,7 +30,7 @@ _FILES: dict[PlaceCategory, str] = {
 }
 
 # 候选交给排日程的模型挑选，数量随天数增加，但要控制在提示词放得下的范围。
-MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 24, 8
+MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 40, 8
 # 不适合当正餐的类型。
 _NOT_A_MEAL = {"面包甜点", "咖啡店", "酒吧/酒馆", "茶馆/茶室", ""}
 _SPICY = {"川菜", "湘菜", "火锅"}
