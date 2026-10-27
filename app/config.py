@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     # ============== MCP 服务配置 ==============
     amap_api_key: str = Field(default="", alias="AMAP_API_KEY")
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
+    # 自建 SearXNG 元搜索（如 http://127.0.0.1:8080），Tavily 没配或额度用完时作为联网搜索兜底。
+    searxng_url: str = Field(default="", alias="SEARXNG_URL")
     mcp_weather_url: str = Field(default="", alias="MCP_WEATHER_URL")
     mcp_search_url: str = Field(default="", alias="MCP_SEARCH_URL")
     external_timeout_seconds: float = Field(default=10.0, alias="EXTERNAL_TIMEOUT_SECONDS")

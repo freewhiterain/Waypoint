@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +14,9 @@ from app.mcp_core.client import get_mcp_client
 from app.schemas.planning import Evidence, TaskType
 from app.schemas.events import EvidenceSufficiency
 from app.utils.logger import app_logger
+
+if TYPE_CHECKING:
+    from app.schemas.tool_policy import ToolPolicy
 
 
 class ProviderError(BaseModel):
@@ -187,6 +190,25 @@ def _merge_evidence(document_evidence: Any, graph_evidence: list[Any]) -> list[A
     return merged
 
 
+# 子 Agent 的查询是"研究西安本地美食与用户饮食偏好匹配情况"这种任务描述句，
+# 给本地 BM25 没问题，直接丢给搜索引擎却只会搜回无关的百科页。
+_WEB_QUERY_HINTS = {
+    "attractions": "必去景点 推荐",
+    "food": "必吃 美食 餐厅 推荐",
+    "hotel": "住宿 推荐 区域 酒店",
+    "transport": "市内交通 地铁 攻略",
+}
+
+
+def web_search_query(payload: Mapping[str, Any]) -> str:
+    """规划时的首轮搜索换成"城市 + 关键词"；深度搜索（带 limit）自己生成的查询原样使用。"""
+    destination = str(payload.get("destination") or "").strip()
+    hint = _WEB_QUERY_HINTS.get(str(payload.get("category") or ""))
+    if "limit" in payload or not destination or hint is None:
+        return str(payload["query"])
+    return f"{destination} {hint}"
+
+
 async def build_subagent_tools(
     worker: TaskType,
     policy: "ToolPolicy | None" = None,
@@ -200,7 +222,7 @@ async def build_subagent_tools(
 ) -> list[Any]:
     """Build normalized MCP and non-MCP tools for one domain worker."""
 
-    from app.schemas.tool_policy import ToolPolicy
+    from app.schemas.tool_policy import ToolPolicy  # noqa: F811 - 运行时导入，避免循环依赖
 
     canonical = ToolPolicy.for_worker(worker)
     if policy is not None and policy.worker != worker:
@@ -230,6 +252,22 @@ async def build_subagent_tools(
             return source.invoke(payload)
 
         tools.append(ReadOnlyTool(name=name, provider=provider, _handler=invoke_mcp))
+
+    # 没有部署搜索 MCP 时，直接用搜索适配器（Tavily → SearXNG）顶上，否则地点库
+    # 没覆盖的城市在"本地资料 → 联网搜索"这条降级链上什么都拿不到，行程全是自由活动。
+    if (
+        "search_mcp" in canonical.allowed_tools
+        and not any(tool.provider == "search_mcp" for tool in tools)
+        and (search_adapter is not None or settings.enable_external_tools)
+    ):
+        if search_adapter is None:
+            from app.mcp_core.adapters.search import default_search_adapter
+            search_adapter = default_search_adapter()
+        if search_adapter is not None:
+            async def invoke_search(payload: Mapping[str, Any], *, adapter=search_adapter) -> Any:
+                return await adapter.search(web_search_query(payload), int(payload.get("limit", 5)))
+
+            tools.append(ReadOnlyTool(name="web_search", provider="search_mcp", _handler=invoke_search))
 
     if "local_rag" in canonical.allowed_tools:
         if knowledge is None:
@@ -273,9 +311,10 @@ async def build_subagent_tools(
         if deep_research_service is None and (search_adapter is not None or settings.enable_external_tools):
             from app.research.deep_research import DeepResearchService
             if search_adapter is None:
-                from app.mcp_core.adapters.search import TavilySearchAdapter
-                search_adapter = TavilySearchAdapter()
-            deep_research_service = DeepResearchService(search_adapter.search)
+                from app.mcp_core.adapters.search import default_search_adapter
+                search_adapter = default_search_adapter()
+            if search_adapter is not None:
+                deep_research_service = DeepResearchService(search_adapter.search)
 
         if deep_research_service is not None:
             async def invoke_deep_research(payload: Mapping[str, Any]) -> Any:
