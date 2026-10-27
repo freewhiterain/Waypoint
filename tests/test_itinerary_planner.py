@@ -1,5 +1,6 @@
 """LLM 选点 → 算法排程 → 约束检查（LLM 全部用假对象，不访问网络）。"""
 
+import re
 from datetime import date
 
 import pytest
@@ -276,3 +277,13 @@ def test_not_eating_spicy_food_is_not_read_as_food_interest():
 
     assert wants_lunch(requirement(styles=["美食"]))
     assert not wants_lunch(requirement(food_preferences=["不吃辣"]))
+
+
+@pytest.mark.asyncio
+async def test_origin_city_is_mentioned_on_the_first_and_last_day_without_invented_schedules():
+    itinerary, _ = await plan_itinerary(requirement(days=2, origin="上海"), chengdu_results(LEGS), llm=None)
+
+    assert any(note.startswith("交通：从上海出发") for note in itinerary[0].notes)
+    assert any("返回上海" in note for note in itinerary[-1].notes)
+    transport = " ".join(note for day in itinerary for note in day.notes if note.startswith("交通："))
+    assert not re.search(r"\d{1,2}:\d{2}|[GDKZT]\d{2,4}", transport)  # 不编车次和发车时间

@@ -105,6 +105,7 @@ def day_capacities(requirement: TravelRequirement) -> list[int]:
 
 WEATHER_NOTE_PREFIX = "天气："
 HOTEL_NOTE_PREFIX = "住宿："
+TRANSPORT_NOTE_PREFIX = "交通："
 _WEATHER_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})：")
 
 
@@ -649,6 +650,12 @@ async def plan_itinerary(
     for day, text in _trip_weather(requirement, results).items():
         if day <= len(itinerary):
             itinerary[day - 1].notes.insert(0, f"{WEATHER_NOTE_PREFIX}{text}")
+    # 城际交通不在规划范围内，也没有实时班次数据：只说明从哪来、回哪去，不编班次。
+    if requirement.origin and itinerary:
+        itinerary[0].notes.append(
+            f"{TRANSPORT_NOTE_PREFIX}从{requirement.origin}出发，城际高铁或航班请在 12306 或航旅 App 查询实时班次。"
+        )
+        itinerary[-1].notes.append(f"{TRANSPORT_NOTE_PREFIX}行程结束后返回{requirement.origin}，返程班次同样需要实时查询。")
     return itinerary, list(dict.fromkeys(warnings))
 
 

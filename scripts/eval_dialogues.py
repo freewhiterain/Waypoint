@@ -98,6 +98,13 @@ def scenarios() -> list[Scenario]:
             must_contain=["杭州", "第2天"],
         ),
         Scenario(
+            name="nanjing_from_shanghai",
+            turns=[f"{soon}从上海出发去南京玩两天，帮我规划"],
+            expect_prefill={"destination": "南京", "days": 2, "departure_date": soon},
+            must_contain=["从上海出发", "返回上海"],
+            must_not_contain=["第3天"],
+        ),
+        Scenario(
             name="change_destination",
             turns=["帮我规划去上海玩2天", "算了，改成南京吧"],
             expect_prefill={"destination": "南京", "days": 2},
