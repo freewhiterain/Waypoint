@@ -24,7 +24,8 @@ def _hermetic_defaults(monkeypatch):
     行程合成的测试都会真的调用模型，又慢又不稳定。需要"已配置 Key"的测试自己再设。
     槽位默认存内存：生产实现读写 conversation.extra_info，会连本机 PostgreSQL。
     """
-    from app.api.v1 import chat, tools
+    from app.services import trip_form as tools
+    from app.services import chat_flow as chat
     from app.config import settings
     from app.services.slots import InMemorySlotRepository
 

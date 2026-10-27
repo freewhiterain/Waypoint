@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.api.v1.tools import build_requirement
+from app.services.trip_form import build_requirement
 from app.schemas.planning import TravelRequirement
 from app.services.main_agent import MainAgentService
 from app.services.planning import RequirementExtractor
@@ -92,7 +92,7 @@ async def test_form_submission_passes_context_into_planning(monkeypatch):
     }
     repository = InMemoryInvocationRepository([record])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     calls = []
 

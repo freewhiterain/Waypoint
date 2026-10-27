@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from app.agents.agent_tools import AgentToolRegistry
-from app.api.v1 import chat
+from app.services import chat_flow as chat
 from app.schemas.research import SubagentResponse
 from app.schemas.tools import AgentToolArguments, AgentToolCall, AgentToolResult, MainAgentDecision
 from app.services.main_agent import MainAgentService

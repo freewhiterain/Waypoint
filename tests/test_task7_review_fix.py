@@ -6,7 +6,7 @@ import pytest
 from app.agents import factory
 from app.agents.subagents.registry import SubagentRegistry
 from app.api.v1 import planning as planning_api
-from app.api.v1 import tools as tools_api
+from app.services import trip_form as tools_api
 from app.governance.events import InMemoryEventRepository
 from app.schemas.governance import TaskEventRecord
 from app.schemas.planning import TripDraftRecord, TravelPlanDraft, TravelRequirement

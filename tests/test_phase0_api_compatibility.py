@@ -2,7 +2,7 @@
 
 import json
 
-from app.api.v1.chat import sse
+from app.api.sse import sse
 from app.main import app
 
 

@@ -7,7 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.api.v1 import chat, tools
+from app.api.v1 import chat as chat_api, tools as tools_api
+from app.services import trip_form as tools
+from app.services import chat_flow as chat
 from app.api.v1.conversations import create_conversation
 from app.governance.events import InMemoryEventRepository
 from app.governance.tool_invocations import (
@@ -223,9 +225,9 @@ async def test_valid_tool_result_runs_supervisor_exactly_once_and_returns_final(
         }
     )
 
-    first = await tools.submit_tool_result("call-final", request, user)
+    first = await tools_api.submit_tool_result("call-final", request, user)
     first_events = await collect_response(first)
-    duplicate = await tools.submit_tool_result("call-final", request, user)
+    duplicate = await tools_api.submit_tool_result("call-final", request, user)
     duplicate_events = await collect_response(duplicate)
 
     assert [event["type"] for event in first_events] == ["result", "token", "done"]
@@ -320,7 +322,7 @@ async def test_recommendation_saves_partial_values_then_selected_city_resumes(mo
         }
     )
 
-    recommendation_response = await tools.submit_tool_result(
+    recommendation_response = await tools_api.submit_tool_result(
         "call-recommend", recommendation, user
     )
     recommendation_events = await collect_response(recommendation_response)
@@ -346,7 +348,7 @@ async def test_recommendation_saves_partial_values_then_selected_city_resumes(mo
             },
         }
     )
-    completion_response = await tools.submit_tool_result(
+    completion_response = await tools_api.submit_tool_result(
         "call-recommend", completion, user
     )
     completion_events = await collect_response(completion_response)
@@ -396,7 +398,7 @@ async def test_history_refresh_contains_and_restores_pending_tool_state():
             },
         ),
     ]
-    history = await chat.get_chat_history(
+    history = await chat_api.get_chat_history(
         str(conversation_id), user, HistorySession(conversation, messages)
     )
 

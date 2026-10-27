@@ -36,7 +36,7 @@ async def test_tool_result_flow_persists_the_trip_draft(monkeypatch):
     repository = InMemoryInvocationRepository([seeded])
     configure_endpoint(monkeypatch, repository)
 
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
     from app.governance.drafts import InMemoryDraftRepository
 
     drafts = InMemoryDraftRepository()
@@ -70,7 +70,7 @@ async def test_draft_persistence_failure_does_not_break_the_stream(monkeypatch):
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
 
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     class BrokenDraftRepository:
         async def get(self, user_id, conversation_id):

@@ -8,7 +8,7 @@ from app.agents import supervisor as supervisor_module
 from app.agents.subagents.base import DomainSubagent
 from app.agents.subagents.registry import SubagentRegistry
 from app.agents.subagents.tools import ReadOnlyTool
-from app.api.v1 import tools
+from app.services import trip_form as tools
 from app.governance.tool_invocations import ProcessingOutcome, ToolInvocationRecord
 from app.research.deep_search import DeepSearchEvaluation, run_deep_search
 from app.schemas.planning import Evidence

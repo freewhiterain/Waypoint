@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
-from app.api.v1 import chat
+from app.services import chat_flow as chat
 from app.schemas.slots import SlotUpdate, TripSlots
 from app.schemas.tools import MainAgentDecision
 from app.services import react_agent

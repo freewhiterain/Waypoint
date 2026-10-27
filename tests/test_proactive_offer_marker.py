@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from app.api.v1 import chat
+from app.services import chat_flow as chat
 from app.services.main_agent import MainAgentService
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent

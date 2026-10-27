@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.api.v1 import chat
+from app.services import chat_flow as chat
 from app.schemas.slots import SlotUpdate
 from app.schemas.tools import MainAgentDecision
 

@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from app.api.v1 import chat
+from app.services import chat_flow as chat
 from app.schemas.slots import SlotUpdate, TripSlots
 from app.schemas.tools import MainAgentDecision
 from app.services.slots import (

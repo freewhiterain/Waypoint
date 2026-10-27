@@ -188,7 +188,7 @@ async def endpoint_client(user):
 
 
 def configure_endpoint(monkeypatch, repository):
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     session = RecordingSession()
     events = RecordingEventRepository()
@@ -289,7 +289,7 @@ async def test_recommendation_keeps_call_pending_and_returns_rag_answer(monkeypa
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     session, _ = configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     queries = []
 
@@ -325,7 +325,7 @@ async def test_completed_result_invokes_supervisor_once_with_confirmed_fields(mo
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     session, events = configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     calls = []
 
@@ -391,7 +391,7 @@ async def test_duplicate_completed_result_uses_stored_completion_without_supervi
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id), status="completed")])
     repository.records["call-1"].result = durable
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     async def unexpected_supervisor(*_args, **_kwargs):
         raise AssertionError("duplicate completion must not invoke Supervisor")
@@ -415,7 +415,7 @@ async def test_supervisor_failure_releases_claim_and_sanitizes_retryable_error(m
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     async def failing_supervisor(*_args, **_kwargs):
         raise RuntimeError("database password leaked")
@@ -457,7 +457,7 @@ async def test_active_processing_duplicate_returns_nonterminal_tool_result(monke
     active.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     repository = InMemoryInvocationRepository([active])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     async def unexpected_supervisor(*_args, **_kwargs):
         raise AssertionError("active processing duplicate must not invoke Supervisor")
@@ -484,7 +484,7 @@ async def test_heartbeat_keeps_long_supervisor_claim_owned(monkeypatch):
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     monkeypatch.setattr(tools, "PROCESSING_LEASE_TIMEOUT", timedelta(milliseconds=45))
     supervisor_started = asyncio.Event()
@@ -523,7 +523,7 @@ async def test_lease_loss_cancels_blocking_supervisor_before_second_claim_side_e
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     monkeypatch.setattr(tools, "PROCESSING_LEASE_TIMEOUT", timedelta(milliseconds=30))
     started = asyncio.Event()
@@ -578,7 +578,7 @@ async def test_heartbeat_lease_loss_prevents_finish_and_returns_retryable_confli
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     monkeypatch.setattr(tools, "PROCESSING_LEASE_TIMEOUT", timedelta(milliseconds=30))
 
@@ -615,7 +615,7 @@ async def test_heartbeat_exception_cancels_supervisor_and_releases_original_clai
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     monkeypatch.setattr(tools, "PROCESSING_LEASE_TIMEOUT", timedelta(milliseconds=30))
     release_calls = []
@@ -657,7 +657,7 @@ async def test_client_cancellation_releases_claim_and_stops_heartbeat(monkeypatc
     user = SimpleNamespace(id=uuid4())
     repository = InMemoryInvocationRepository([invocation(user_id=str(user.id))])
     session, _ = configure_endpoint(monkeypatch, repository)
-    from app.api.v1 import tools
+    from app.services import trip_form as tools
 
     started = asyncio.Event()
 
