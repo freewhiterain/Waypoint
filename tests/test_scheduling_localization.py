@@ -88,3 +88,21 @@ def test_internal_warnings_are_translated_or_hidden_from_the_user():
         "第1天上午武侯祠尚未开放",
         "证据未提供降水、风力、空气质量等信息。",
     ]
+
+
+def test_model_notes_mentioning_internal_field_names_are_hidden():
+    from app.services.plan_render import user_facing_warnings
+
+    shown = user_facing_warnings(["证据中未提供开放时间，故未填写 opening_hours 或 estimated_cost。", "证据来源多为旅游介绍页面，信息时效性有限。"])
+
+    assert shown == ["证据来源多为旅游介绍页面，信息时效性有限。"]
+
+
+def test_known_notices_come_first_and_model_notes_are_capped():
+    from app.services.plan_render import user_facing_warnings
+
+    notes = [f"证据未提供第{index}项的营业时间信息。" for index in range(6)]
+    shown = user_facing_warnings([*notes, "planning_degraded:provider_degraded"])
+
+    assert shown[0] == "部分信息来源不可用，行程基于现有资料生成。"
+    assert shown[1:] == notes[:3]

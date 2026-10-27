@@ -14,25 +14,35 @@ _WARNING_TEXT = {
     "itinerary_selection_fallback:llm_failed": "智能选点暂时不可用，本次按固定规则选点。",
 }
 _NO_EVIDENCE = re.compile(r"^No (?:evidence is available|provider returned evidence) for (\w+)\.$")
-_MAX_USER_WARNINGS = 8
+_MAX_USER_WARNINGS = 6
+# 子 Agent 模型写的备注（"证据未提供……"）每份行程能有七八条，读起来像审计日志，只留几条。
+_MAX_MODEL_NOTES = 3
 
 
 def user_facing_warnings(warnings: list[str]) -> list[str]:
-    """把内部告警整理成给用户看的中文说明：翻译已知代码，丢掉只对开发者有意义的条目。"""
-    shown: list[str] = []
+    """把内部告警整理成给用户看的中文说明：翻译已知代码，丢掉只对开发者有意义的条目。
+
+    已知代码的翻译排在前面，模型写的中文备注排在后面且最多 _MAX_MODEL_NOTES 条。
+    """
+    known: list[str] = []
+    notes: list[str] = []
     for warning in warnings:
         text = _WARNING_TEXT.get(warning)
         if text is None and warning.startswith("itinerary_constraint:"):
             text = warning.split(":", 2)[-1]
         if text is None and (match := _NO_EVIDENCE.match(warning)):
             text = f"没有查到{_WORKER_LABELS.get(match.group(1), match.group(1))}的资料。"
-        if text is None:
-            # 其余英文或代码形式的告警（去重、证据校验的过程记录）不展示；模型写的中文说明保留。
-            chinese = len(re.findall(r"[一-鿿]", warning))
-            text = warning if chinese >= max(4, len(warning) // 4) else None
-        if text and text not in shown:
-            shown.append(text)
-    return shown[:_MAX_USER_WARNINGS]
+        if text is not None:
+            if text not in known:
+                known.append(text)
+            continue
+        # 其余英文或代码形式的告警（去重、证据校验的过程记录）不展示；模型写的中文说明保留，
+        # 但夹着 opening_hours 这类内部字段名的不给用户看。
+        chinese = len(re.findall(r"[一-鿿]", warning))
+        internal = re.search(r"[a-z]+_[a-z_]+", warning)
+        if chinese >= max(4, len(warning) // 4) and not internal and warning not in notes:
+            notes.append(warning)
+    return (known + notes[:_MAX_MODEL_NOTES])[:_MAX_USER_WARNINGS]
 
 
 def render_plan_markdown(draft: TravelPlanDraft) -> str:
