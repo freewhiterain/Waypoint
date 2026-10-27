@@ -68,10 +68,27 @@ async def test_search_adapter_is_registered_as_web_search_when_no_search_mcp_exi
 
 
 def test_planning_search_uses_engine_friendly_keywords_but_deep_search_queries_pass_through():
-    from app.agents.subagents.tools import web_search_query
+    from app.agents.subagents.tools import web_search_queries
 
     planning = {"query": "研究西安本地美食与用户饮食偏好匹配情况 西安", "destination": "西安", "category": "food"}
     deep = {**planning, "query": "西安 回民街 老字号", "limit": 3}
 
-    assert web_search_query(planning) == "西安 必吃 美食 餐厅 推荐"
-    assert web_search_query(deep) == "西安 回民街 老字号"
+    assert web_search_queries(planning) == ["西安 必吃 美食 餐厅 推荐", "西安 美食攻略 老字号"]
+    assert web_search_queries(deep) == ["西安 回民街 老字号"]
+
+
+@pytest.mark.asyncio
+async def test_planning_search_merges_queries_and_drops_results_not_about_the_city():
+    from app.agents.subagents.tools import search_for_planning
+
+    class Noisy:
+        async def search(self, query, max_results=5):
+            return [
+                Evidence(content=f"厦门 鼓浪屿 {query}", source="攻略", source_url="https://a.test"),
+                Evidence(content="一首老歌的歌词", source="歌词网", source_url="https://lyrics.test"),
+                Evidence(content="厦门 鼓浪屿 重复", source="攻略", source_url="https://a.test"),
+            ]
+
+    results = await search_for_planning(Noisy(), {"query": "x", "destination": "厦门", "category": "attractions"})
+
+    assert [item.source_url for item in results] == ["https://a.test"]

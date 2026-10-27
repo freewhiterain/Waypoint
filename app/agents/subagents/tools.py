@@ -192,21 +192,49 @@ def _merge_evidence(document_evidence: Any, graph_evidence: list[Any]) -> list[A
 
 # 子 Agent 的查询是"研究西安本地美食与用户饮食偏好匹配情况"这种任务描述句，
 # 给本地 BM25 没问题，直接丢给搜索引擎却只会搜回无关的百科页。
+# 每类给两组说法：元搜索引擎对单个查询的结果波动很大（同一句"厦门 必去景点"有时
+# 会搜回歌词和网盘链接），两组合并后再按是否提到目的地过滤，稳定得多。
 _WEB_QUERY_HINTS = {
-    "attractions": "必去景点 推荐",
-    "food": "必吃 美食 餐厅 推荐",
-    "hotel": "住宿 推荐 区域 酒店",
-    "transport": "市内交通 地铁 攻略",
+    "attractions": ("必去景点 推荐", "旅游攻略 景点"),
+    "food": ("必吃 美食 餐厅 推荐", "美食攻略 老字号"),
+    "hotel": ("住宿 推荐 区域 酒店", "住哪里方便 酒店"),
+    "transport": ("市内交通 地铁 攻略", "公共交通 出行攻略"),
 }
 
 
-def web_search_query(payload: Mapping[str, Any]) -> str:
+def web_search_queries(payload: Mapping[str, Any]) -> list[str]:
     """规划时的首轮搜索换成"城市 + 关键词"；深度搜索（带 limit）自己生成的查询原样使用。"""
     destination = str(payload.get("destination") or "").strip()
-    hint = _WEB_QUERY_HINTS.get(str(payload.get("category") or ""))
-    if "limit" in payload or not destination or hint is None:
-        return str(payload["query"])
-    return f"{destination} {hint}"
+    hints = _WEB_QUERY_HINTS.get(str(payload.get("category") or ""))
+    if "limit" in payload or not destination or hints is None:
+        return [str(payload["query"])]
+    return [f"{destination} {hint}" for hint in hints]
+
+
+async def search_for_planning(adapter: Any, payload: Mapping[str, Any]) -> list[Evidence]:
+    """跑几组查询、按 URL 去重；规划用的首轮搜索只留提到目的地的结果。"""
+    queries = web_search_queries(payload)
+    limit = int(payload.get("limit", 5))
+    destination = str(payload.get("destination") or "").strip()
+    merged: list[Evidence] = []
+    seen: set[str] = set()
+    for query in queries:
+        try:
+            results = await adapter.search(query, limit)
+        except Exception as exc:
+            if len(queries) == 1:
+                raise
+            app_logger.warning(f"联网搜索失败，换下一组查询: {type(exc).__name__}")
+            continue
+        for item in results:
+            key = item.source_url or item.content
+            if key in seen:
+                continue
+            if len(queries) > 1 and destination and destination not in f"{item.source}{item.content}":
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged[: max(limit, 5)]
 
 
 async def build_subagent_tools(
@@ -265,7 +293,7 @@ async def build_subagent_tools(
             search_adapter = default_search_adapter()
         if search_adapter is not None:
             async def invoke_search(payload: Mapping[str, Any], *, adapter=search_adapter) -> Any:
-                return await adapter.search(web_search_query(payload), int(payload.get("limit", 5)))
+                return await search_for_planning(adapter, payload)
 
             tools.append(ReadOnlyTool(name="web_search", provider="search_mcp", _handler=invoke_search))
 
