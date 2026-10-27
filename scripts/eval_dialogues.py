@@ -47,6 +47,8 @@ class Scenario:
     # 最终输出（行程 markdown 或回答）必须包含 / 不能包含的文字
     must_contain: list[str] = field(default_factory=list)
     must_not_contain: list[str] = field(default_factory=list)
+    # 拿到行程后再说的修改意见：每句都应再次出现表单，提交后以最后一版行程做断言。
+    revise: list[str] = field(default_factory=list)
 
 
 def _next_weekday(weekday: int) -> date:
@@ -105,6 +107,14 @@ def scenarios() -> list[Scenario]:
             turns=[f"{soon}去上海玩两天，喜欢博物馆和美术馆，帮我做个攻略"],
             expect_prefill={"destination": "上海", "days": 2, "departure_date": soon},
             must_contain=["上海", "博物馆"],
+        ),
+        Scenario(
+            name="chengdu_revise_after_plan",
+            turns=[f"帮我规划成都两天的行程，{soon}出发"],
+            revise=["把熊猫基地换成别的，第二天轻松一点"],
+            expect_prefill={"destination": "成都", "days": 2, "departure_date": soon},
+            must_contain=["第2天", "轻松"],
+            must_not_contain=["熊猫", "第3天"],
         ),
         Scenario(
             name="open_question_weather",
@@ -248,6 +258,19 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
                     failures.append(f"规划报错：{errors[0].get('message')}")
                 output = _text_of(plan_events)
                 failures.extend(plan_quality_failures(output))
+                for turn in scenario.revise:
+                    revise_events = client.send(conversation_id, turn)
+                    transcript.append({"user": turn, "events": revise_events})
+                    form = next(
+                        (e for e in revise_events if e.get("tool") == "collect_trip_requirements"), None
+                    )
+                    if form is None:
+                        failures.append(f"修改意见「{turn}」没有触发重新规划")
+                        break
+                    replan = client.submit_form(form["call_id"], form["arguments"]["initial_values"])
+                    transcript.append({"form": form["arguments"], "events": replan})
+                    output = _text_of(replan)
+                    failures.extend(plan_quality_failures(output))
 
     if submit_plan or tool_call is None:
         for needle in scenario.must_contain:

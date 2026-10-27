@@ -29,6 +29,9 @@ class TripSlots(BaseModel):
     food_preferences: list[str] = Field(default_factory=list)
     # 模型推荐过、用户还没明确接受的城市。只是候选，不等于目的地。
     suggested_destinations: list[str] = Field(default_factory=list)
+    # 看过行程后提的修改：不想去的地点、希望轻松些的第几天。换目的地时清空。
+    avoid_places: list[str] = Field(default_factory=list)
+    relaxed_days: list[int] = Field(default_factory=list)
 
     def missing(self) -> list[str]:
         return [name for name in REQUIRED_SLOTS if getattr(self, name) in (None, "")]
@@ -44,7 +47,7 @@ class TripSlots(BaseModel):
         """表单不问、但要带进规划需求的信息（人数、偏好、出发地）。"""
         context = self.model_dump(
             mode="json",
-            include={"origin", "adults", "children", "styles", "food_preferences"},
+            include={"origin", "adults", "children", "styles", "food_preferences", "avoid_places", "relaxed_days"},
             exclude_none=True,
         )
         return {key: value for key, value in context.items() if value != []}
@@ -61,6 +64,12 @@ class SlotUpdate(BaseModel):
     children: int | None = Field(default=None, description="儿童人数")
     styles: list[str] = Field(default_factory=list, description="游玩兴趣或风格，如 美食、熊猫、亲子")
     food_preferences: list[str] = Field(default_factory=list, description="口味或饮食要求，如 不吃辣、素食")
+    avoid_places: list[str] = Field(
+        default_factory=list, description="用户这一轮明确说不想去、要换掉的具体地点或餐厅，照抄用户说的名字"
+    )
+    relaxed_days: list[int] = Field(
+        default_factory=list, description="用户希望安排得轻松些的第几天（从 1 开始）；整趟都要轻松时列出每一天"
+    )
 
     def is_empty(self) -> bool:
         return not self.model_dump(exclude_defaults=True)

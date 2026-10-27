@@ -80,6 +80,29 @@ def _options(results: list[WorkerResult], worker: str) -> list[CandidateOption]:
     return [option for result in results if result.worker == worker for option in result.options]
 
 
+def _avoided(option: CandidateOption, requirement: TravelRequirement) -> bool:
+    """用户说过不想去的地点（"换掉熊猫基地"里的"熊猫基地"也能对上"成都大熊猫繁育研究基地"）。"""
+    return any(term and (term in option.name or option.name in term) for term in requirement.avoid_places)
+
+
+def _candidates(results: list[WorkerResult], worker: str, requirement: TravelRequirement) -> list[CandidateOption]:
+    """可供选点的候选：去掉用户明确不想去的。"""
+    return [option for option in _options(results, worker) if not _avoided(option, requirement)]
+
+
+def _relaxed_hint(requirement: TravelRequirement) -> str:
+    days = [day for day in sorted(set(requirement.relaxed_days)) if day <= requirement.days]
+    if not days:
+        return ""
+    return "用户要求" + "、".join(f"第{day}天" for day in days) + "轻松些，这几天只排 1 个景点，选不太累的。"
+
+
+def day_capacities(requirement: TravelRequirement) -> list[int]:
+    """每天最多几个景点：用户要求轻松的那几天只排 1 个。"""
+    relaxed = set(requirement.relaxed_days)
+    return [1 if day in relaxed else ATTRACTIONS_PER_DAY for day in range(1, requirement.days + 1)]
+
+
 WEATHER_NOTE_PREFIX = "天气："
 HOTEL_NOTE_PREFIX = "住宿："
 _WEATHER_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})：")
@@ -185,8 +208,8 @@ async def select_places_with_llm(
     feedback: list[Violation],
 ) -> PlaceSelection:
     candidates = {
-        "attractions": [_option_digest(option) for option in _options(results, "attractions")],
-        "dinners": [_option_digest(option) for option in _options(results, "food")],
+        "attractions": [_option_digest(option) for option in _candidates(results, "attractions", requirement)],
+        "dinners": [_option_digest(option) for option in _candidates(results, "food", requirement)],
         "hotels": [_option_digest(option) for option in _options(results, "hotel")],
         "weather": [f"第{day}天：{text}" for day, text in _trip_weather(requirement, results).items()]
         or _summaries(results, "weather"),
@@ -197,8 +220,9 @@ async def select_places_with_llm(
             "role": "system",
             "content": (
                 "你是行程选点助手，以 JSON 格式输出。只能从给定候选里按 id 选择，不得新增地点。"
-                f"每天最多 {ATTRACTIONS_PER_DAY} 个景点、1 顿晚餐；景点总数不超过天数×{ATTRACTIONS_PER_DAY}。"
-                "按用户偏好和人数取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
+                f"每天最多 {ATTRACTIONS_PER_DAY} 个景点、1 顿晚餐；景点总数不超过 {sum(day_capacities(requirement))} 个。"
+                + _relaxed_hint(requirement)
+                + "按用户偏好和人数取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
                 "选一个落脚酒店（hotel_id），尽量靠近所选景点。顺序和分天由后续算法决定，不需要你排。"
                 "候选里的 position 是 [纬度, 经度]，可以用来判断远近：晚餐选在所选景点附近的，"
                 "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个。"
@@ -239,10 +263,12 @@ def select_places_by_rules(
     results: list[WorkerResult],
 ) -> PlaceSelection:
     """没有 LLM 时的选点：偏好命中多的优先，其余保持子 Agent 给出的顺序。"""
-    attractions = sorted(_options(results, "attractions"), key=lambda option: -_keyword_score(option, requirement))
-    dinners = sorted(_options(results, "food"), key=lambda option: -_keyword_score(option, requirement))
+    attractions = sorted(
+        _candidates(results, "attractions", requirement), key=lambda option: -_keyword_score(option, requirement)
+    )
+    dinners = sorted(_candidates(results, "food", requirement), key=lambda option: -_keyword_score(option, requirement))
     hotels = _options(results, "hotel")
-    limit = requirement.days * ATTRACTIONS_PER_DAY
+    limit = sum(day_capacities(requirement))
     return PlaceSelection(
         hotel_id=hotels[0].id if hotels else None,
         attractions=[SelectedPlace(id=option.id) for option in attractions[:limit]],
@@ -254,8 +280,8 @@ def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results
     """丢掉不存在或重复的 id、超出容量的景点和越界的 preferred_day。"""
     warnings: list[str] = []
     valid = {
-        "attractions": {option.id for option in _options(results, "attractions")},
-        "dinners": {option.id for option in _options(results, "food")},
+        "attractions": {option.id for option in _candidates(results, "attractions", requirement)},
+        "dinners": {option.id for option in _candidates(results, "food", requirement)},
     }
 
     def clean(items: list[SelectedPlace], kind: str, limit: int) -> list[SelectedPlace]:
@@ -273,7 +299,7 @@ def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results
     return (
         PlaceSelection(
             hotel_id=selection.hotel_id if selection.hotel_id in hotel_ids else None,
-            attractions=clean(selection.attractions, "attractions", requirement.days * ATTRACTIONS_PER_DAY),
+            attractions=clean(selection.attractions, "attractions", sum(day_capacities(requirement))),
             dinners=clean(selection.dinners, "dinners", requirement.days),
         ),
         warnings,
@@ -289,22 +315,24 @@ def assign_days(
     days: int,
     hotel_id: str | None,
     costs: TravelCosts,
+    capacities: list[int] | None = None,
 ) -> list[list[str]]:
-    """把景点分到每天（每天最多 ATTRACTIONS_PER_DAY 个），并排好每天内部顺序。
+    """把景点分到每天（每天最多 capacities[i] 个，默认 ATTRACTIONS_PER_DAY），并排好每天内部顺序。
 
     先放用户/LLM 指定了日期的景点；剩下的按"离酒店最近的作为当天起点，再补离它
     最近的"贪心成组，让同一天的景点彼此靠近。
     """
+    capacities = capacities or [ATTRACTIONS_PER_DAY] * days
     plan: list[list[str]] = [[] for _ in range(days)]
     remaining = list(attraction_ids)
     for place_id in list(remaining):
         day = preferred.get(place_id)
-        if day is not None and len(plan[day - 1]) < ATTRACTIONS_PER_DAY:
+        if day is not None and len(plan[day - 1]) < capacities[day - 1]:
             plan[day - 1].append(place_id)
             remaining.remove(place_id)
 
-    for day_places in plan:
-        while remaining and len(day_places) < ATTRACTIONS_PER_DAY:
+    for day_places, capacity in zip(plan, capacities):
+        while remaining and len(day_places) < capacity:
             anchor = day_places[-1] if day_places else hotel_id
             nearest = min(remaining, key=lambda place_id: (costs.cost(anchor, place_id), remaining.index(place_id)))
             # 当天已经有景点时，离它太远的不硬凑进同一天：这个时段宁可空着，远的留给后面的日子。
@@ -317,7 +345,7 @@ def assign_days(
     # 行程里却出现"没有第二个景点候选"的空时段。这里把它们补进还有空位、
     # 增加路程最少的那一天；真的太远时由约束检查报出来，交给 LLM 重选。
     for place_id in list(remaining):
-        open_days = [day_places for day_places in plan if len(day_places) < ATTRACTIONS_PER_DAY]
+        open_days = [day_places for day_places, capacity in zip(plan, capacities) if len(day_places) < capacity]
         if not open_days:
             break
         target = min(
@@ -335,6 +363,7 @@ def top_up_days(
     candidate_ids: list[str],
     hotel_id: str | None,
     costs: TravelCosts,
+    capacities: list[int] | None = None,
 ) -> list[list[str]]:
     """选点不够时，从没选中的候选里给空时段补一个顺路的景点。
 
@@ -343,11 +372,12 @@ def top_up_days(
     其余按热门程度"，这里在离当天已有景点（没有时离酒店）不超过 MAX_HOP_MINUTES
     的候选里取最近的；附近确实没有时才让时段空着。
     """
+    capacities = capacities or [ATTRACTIONS_PER_DAY] * len(day_plans)
     used = {place_id for day in day_plans for place_id in day}
     filled: list[list[str]] = []
-    for day_places in day_plans:
+    for day_places, capacity in zip(day_plans, capacities):
         day_places = list(day_places)
-        while len(day_places) < ATTRACTIONS_PER_DAY:
+        while len(day_places) < capacity:
             anchor = day_places[-1] if day_places else hotel_id
             pool = [place_id for place_id in candidate_ids if place_id not in used]
             if not pool:
@@ -402,11 +432,16 @@ def build_itinerary(
 ) -> list[ItineraryDay]:
     options = {option.id: option for worker in ("attractions", "food") for option in _options(results, worker)}
     preferred = {item.id: item.preferred_day for item in selection.attractions if item.preferred_day}
+    capacities = day_capacities(requirement)
     day_plans = assign_days(
-        [item.id for item in selection.attractions], preferred, requirement.days, selection.hotel_id, costs
+        [item.id for item in selection.attractions], preferred, requirement.days, selection.hotel_id, costs, capacities
     )
     day_plans = top_up_days(
-        day_plans, [option.id for option in _options(results, "attractions")], selection.hotel_id, costs
+        day_plans,
+        [option.id for option in _candidates(results, "attractions", requirement)],
+        selection.hotel_id,
+        costs,
+        capacities,
     )
     dinner_pool = [item.id for item in selection.dinners]
     used_dinners: set[str] = set()
@@ -414,7 +449,7 @@ def build_itinerary(
     lunch_pool = (
         [
             option.id
-            for option in _options(results, "food")
+            for option in _candidates(results, "food", requirement)
             if option.id not in dinner_pool and _open_for_lunch(option)
         ]
         if wants_lunch(requirement)
@@ -443,6 +478,9 @@ def build_itinerary(
             elif period == "morning":
                 slots.append(TimeSlot(period="morning", title="自由活动",
                                       description="当天的景点开门较晚，安排在下午；上午可以自由安排。"))
+            elif capacities[index] < ATTRACTIONS_PER_DAY:
+                slots.append(TimeSlot(period="afternoon", title="自由活动",
+                                      description="按你的要求这天安排得轻松些，下午留给休息或在周边随意逛逛。"))
             else:
                 slots.append(TimeSlot(period="afternoon", title="自由活动",
                                       description="附近没有能顺路安排的景点，下午留给休息或在周边随意逛逛。"))

@@ -31,6 +31,8 @@ export type TripStatus = "pending" | "submitting" | "recommending" | "completed"
 export interface TripCall {
   callId: string;
   values: TripValues;
+  /** 对话里记下的、会带进这次规划的修改意见（不去的地点、轻松的天）。 */
+  revisions: string[];
   /** 第一次出现时缺的槽位：卡片只问这些；为空表示三项都齐，直接显示确认。 */
   askFields: (keyof TripValues)[];
   status: TripStatus;
@@ -106,9 +108,15 @@ function tripFromCall(callId: string, args: Record<string, any> | undefined): Tr
     departure_date: initial.departure_date || "",
     days: initial.days == null ? "" : String(initial.days),
   };
+  const context = args?.requirement_context || {};
+  const revisions = [
+    ...((context.avoid_places as string[] | undefined) || []).map((place) => `不去 ${place}`),
+    ...((context.relaxed_days as number[] | undefined) || []).map((day) => `第 ${day} 天轻松些`),
+  ];
   return {
     callId,
     values,
+    revisions,
     askFields: TRIP_FIELDS.filter((field) => tripFieldError(field, values)),
     status: "pending",
     recommendation: "",

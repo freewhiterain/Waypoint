@@ -205,10 +205,14 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
 
 
 def _mostly_spicy(recommended_food: str) -> bool:
-    """推荐菜里一半以上带辣味词，就算主打辣（菜系写"小吃"的兔头店也会被识别出来）。"""
+    """推荐菜里有两道以上、或一半以上带辣味词，就算主打辣。
+
+    菜系写"小吃"的兔头店，推荐菜是"麻辣手撕烤兔、冷吃兔、兔腿、兔头、鸭头"，
+    5 道里 2 道明确是辣的，其余也多是辣做法。
+    """
     dishes = [dish for dish in recommended_food.split(",") if dish.strip()]
     spicy = [dish for dish in dishes if any(word in dish for word in (*_SPICY_NAME_WORDS, "冷吃", "辣"))]
-    return bool(dishes) and len(spicy) * 2 >= len(dishes)
+    return len(spicy) >= 2 or (bool(dishes) and len(spicy) * 2 >= len(dishes))
 
 
 def _price_cap(records: list[PlaceRecord]) -> float | None:

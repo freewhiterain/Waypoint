@@ -34,6 +34,8 @@ _RELATIVE_DATE = re.compile(r"今天|明天|后天|大后天|下?下?周[一二�
 # 天数必须是“数字 + 时间单位”的说法；“规划一下”里的“一”不算。
 _DAYS_CUE = re.compile(r"(\d+|[一二两三四五六七八九十半])\s*(?:天|日|晚|周|个?星期|个?礼拜|个月)|周末|\d+[\s-]*(?:days?|nights?|weeks?)", re.I)
 _PARTY_CUE = re.compile(r"人|位|口|大人|孩子|小孩|宝宝|娃|爸|妈|父母|老人|朋友|对象|老婆|老公|媳妇|情侣|夫妻|同事|同学|闺蜜|家人|一起|我们|俩|独自|自己")
+# "第二天轻松一点""少安排一个景点""别太累"：才允许记 relaxed_days。
+_RELAXED_CUE = re.compile(r"轻松|少安排|少去|少排|别太累|不要太累|太累|慢一点|慢点|悠闲|休息|空一点|松一点")
 # 用户用指代接受推荐："就第一个吧""去那里"。
 _SELECTION_CUE = re.compile(r"第[一二三四五]个|前者|后者|这个|那个|这里|那里|就它|就这|就那|听你的")
 
@@ -73,6 +75,10 @@ def apply_slot_update(
             len(suggested) == 1 or bool(_SELECTION_CUE.search(user_text))
         )
         if len(destination) <= 80 and (said_by_user or accepted_suggestion):
+            if destination != slots.destination:
+                # 换了城市就是另一趟行程，上一版的修改意见不再适用。
+                values["avoid_places"] = []
+                values["relaxed_days"] = []
             values["destination"] = destination
         else:
             dropped.append("destination")
@@ -111,6 +117,20 @@ def apply_slot_update(
             values["children"] = update.children
         else:
             dropped.append("children")
+
+    # 不想去的地点必须是用户原话里出现过的名字，防止模型替用户排除地点。
+    avoid = [place.strip() for place in update.avoid_places if place.strip()]
+    kept_avoid = [place for place in avoid if place in user_text and len(place) <= 30]
+    if len(kept_avoid) < len(avoid):
+        dropped.append("avoid_places")
+    values["avoid_places"] = list(dict.fromkeys([*values.get("avoid_places", []), *kept_avoid]))[:_MAX_LIST_ITEMS]
+
+    if update.relaxed_days:
+        if _RELAXED_CUE.search(user_text):
+            days = [day for day in update.relaxed_days if isinstance(day, int) and 1 <= day <= 30]
+            values["relaxed_days"] = sorted(set(values.get("relaxed_days", [])) | set(days))
+        else:
+            dropped.append("relaxed_days")
 
     values["styles"] = _dedupe([*slots.styles, *update.styles])
     values["food_preferences"] = _dedupe([*slots.food_preferences, *update.food_preferences])

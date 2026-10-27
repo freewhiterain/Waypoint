@@ -40,6 +40,9 @@ class TravelRequirement(BaseModel):
     transport_preferences: list[str] = Field(default_factory=list)
     accommodation_preferences: list[str] = Field(default_factory=list)
     food_preferences: list[str] = Field(default_factory=list)
+    # 看过上一版行程后提的修改，作为排程的硬约束。
+    avoid_places: list[str] = Field(default_factory=list)
+    relaxed_days: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def destination_must_differ_from_origin(self):

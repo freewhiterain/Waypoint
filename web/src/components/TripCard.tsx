@@ -89,6 +89,17 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
           </div>
         )}
 
+        {trip.revisions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-ink-400">会按你的修改重新规划：</span>
+            {trip.revisions.map((item) => (
+              <span key={item} className="rounded-full bg-sun-50 px-2.5 py-1 text-xs text-sun-700 dark:bg-sun-500/10 dark:text-sun-300">
+                {item}
+              </span>
+            ))}
+          </div>
+        )}
+
         {fields.map((field) => {
           const { question } = FIELD_META[field];
           const error = touched ? errors[field] : "";
