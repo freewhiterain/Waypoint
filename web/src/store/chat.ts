@@ -353,6 +353,9 @@ export const useChat = create<State>((set, get) => {
             if (REACT_TOOLS.has(event.tool) || event.tool.startsWith("research_")) applyActivity(assistantId, event);
           } else if (event.type === "token") {
             patchMessage(assistantId, (m) => ({ ...m, content: m.content + (event.content || "") }));
+          } else if (event.type === "token_reset") {
+            // 模型先说了半句又转去调工具，或最终回答和流式内容不一致：撤回已显示的文字。
+            patchMessage(assistantId, (m) => ({ ...m, content: "" }));
           } else if (event.type === "error") {
             patchMessage(assistantId, (m) => ({ ...m, error: true, content: event.message || "出错了，请稍后再试" }));
           }

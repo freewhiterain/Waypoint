@@ -119,6 +119,9 @@ async def _react_events(question, context, slots, llm, registry):
     async def on_tool_result(payload):
         await queue.put(("tool_result", payload))
 
+    async def on_token(kind, text):
+        await queue.put(("token_delta" if kind == "delta" else "token_reset", text))
+
     task = asyncio.create_task(
         run_react_agent(
             question,
@@ -128,6 +131,7 @@ async def _react_events(question, context, slots, llm, registry):
             tools=build_react_tools(registry),
             on_tool_call=on_tool_call,
             on_tool_result=on_tool_result,
+            on_token=on_token,
         )
     )
     try:
@@ -237,11 +241,18 @@ async def generate_sse_stream(
         react_llm = _react_llm() if decision.action in _ROUTE_ONE_ACTIONS else None
         if react_llm is not None:
             # 线路 1：开放问题、推荐目的地、单项研究都交给 ReAct，由模型自己决定查什么。
+            streamed = ""
             try:
                 react_result = None
                 async for kind, payload in _react_events(user_message, context, slots, react_llm, registry):
                     if kind == "answer":
                         react_result = payload
+                    elif kind == "token_delta":
+                        streamed += payload
+                        yield sse(event("token", {"content": payload, "action": decision.action, "delta": True}))
+                    elif kind == "token_reset":
+                        streamed = ""
+                        yield sse(event("token_reset"))
                     else:
                         yield sse(event(kind, payload))
                 answer = react_result.answer
@@ -262,12 +273,18 @@ async def generate_sse_stream(
                             ],
                         },
                     )
-                yield sse(event("token", {"content": answer, "action": decision.action}))
+                # 已经逐字推完的就不再整段重发；对不上（比如兜底文案）时先撤回再发整段。
+                if streamed.strip() != answer:
+                    if streamed:
+                        yield sse(event("token_reset"))
+                    yield sse(event("token", {"content": answer, "action": decision.action}))
                 yield sse(event("done"))
                 return
             except Exception as exc:
                 # ReAct 出错不该让这一轮没有回答：退回下面的固定流程。
                 app_logger.warning(f"ReAct 问答失败，改走固定流程: {type(exc).__name__}: {exc}")
+                if streamed:
+                    yield sse(event("token_reset"))
 
         if decision.action == "invoke_agent_tool" and decision.tool_call is not None:
             call_id = uuid4().hex

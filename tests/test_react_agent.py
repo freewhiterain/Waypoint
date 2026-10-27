@@ -297,3 +297,58 @@ async def test_planning_intent_never_enters_the_react_loop(monkeypatch):
     assert [event["type"] for event in events] == ["tool_call", "done"]
     assert events[0]["tool"] == "collect_trip_requirements"
     assert llm.calls == []
+
+
+class _StreamingLLM:
+    """先流式回答，或先说半句再调工具；用来测 on_token 的增量和撤回。"""
+
+    def __init__(self, rounds):
+        self.rounds = list(rounds)
+
+    def bind_tools(self, _tools):
+        return self
+
+    async def astream(self, _messages):
+        from langchain_core.messages import AIMessageChunk
+
+        for chunk in self.rounds.pop(0):
+            yield AIMessageChunk(**chunk)
+
+    async def ainvoke(self, _messages):  # pragma: no cover - 流式路径不该走到这里
+        raise AssertionError("streaming model should not be invoked")
+
+
+@pytest.mark.asyncio
+async def test_final_answer_is_streamed_and_a_preamble_before_tool_calls_is_withdrawn():
+    from app.schemas.slots import TripSlots
+    from app.services.react_agent import run_react_agent
+
+    llm = _StreamingLLM([
+        [{"content": "让我查"}, {"content": "", "tool_call_chunks": [
+            {"name": "search_travel_knowledge", "args": '{"query": "成都"}', "id": "c1", "index": 0}
+        ]}],
+        [{"content": "成都"}, {"content": "很好玩。"}],
+    ])
+    tokens = []
+
+    async def on_token(kind, text):
+        tokens.append((kind, text))
+
+    result = await run_react_agent("成都怎么样", [], TripSlots(), llm=llm, tools=[], on_token=on_token)
+
+    assert tokens == [("delta", "让我查"), ("reset", ""), ("delta", "成都"), ("delta", "很好玩。")]
+    assert result.answer == "成都很好玩。"
+    assert [step.tool for step in result.steps] == ["search_travel_knowledge"]
+
+
+@pytest.mark.asyncio
+async def test_streamed_answer_is_not_sent_twice(monkeypatch):
+    llm = _StreamingLLM([[{"content": "成都"}, {"content": "的火锅很有名。"}]])
+    session = _configure_chat(monkeypatch, MainAgentDecision(action="answer_open_question", reason="q"), llm)
+
+    events = await _stream("成都有什么好吃的")
+
+    tokens = [event["content"] for event in events if event["type"] == "token"]
+    assert tokens == ["成都", "的火锅很有名。"]
+    assert events[-1]["type"] == "done"
+    assert session.saved_messages[-1].content == "成都的火锅很有名。"

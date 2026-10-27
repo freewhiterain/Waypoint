@@ -34,6 +34,9 @@ _NO_ANSWER = "这个问题我暂时没有查到可靠的资料，换个问法或
 
 ToolStatus = Literal["completed", "empty", "failed"]
 EventCallback = Callable[[dict[str, Any]], Awaitable[None]]
+# 流式输出回调：("delta", 文字) 追加一段回答；("reset", "") 撤回已经推出去的文字
+# （模型先说了半句，随后又决定调工具）。
+TokenCallback = Callable[[str, str], Awaitable[None]]
 
 
 @dataclass
@@ -217,15 +220,20 @@ async def run_react_agent(
     tools: list[StructuredTool],
     on_tool_call: EventCallback | None = None,
     on_tool_result: EventCallback | None = None,
+    on_token: TokenCallback | None = None,
 ) -> ReactResult:
-    """跑一轮 ReAct，返回最终回答和中间每一步工具调用。"""
+    """跑一轮 ReAct，返回最终回答和中间每一步工具调用。
+
+    传了 on_token 且模型支持 astream 时，每一轮都流式调用：模型直接回答的那一轮，
+    文字边生成边推给前端。
+    """
     tools_by_name = {tool.name: tool for tool in tools}
     model = llm.bind_tools(tools)
     messages: list[Any] = [SystemMessage(content=_system_prompt(slots)), *_history_messages(context), HumanMessage(content=question)]
     steps: list[ReactStep] = []
 
     for _round in range(MAX_TOOL_ROUNDS):
-        reply = await model.ainvoke(messages)
+        reply = await _call(model, messages, on_token)
         tool_calls = list(getattr(reply, "tool_calls", None) or [])
         if not tool_calls:
             return ReactResult(answer=_text(reply) or _NO_ANSWER, steps=steps)
@@ -257,8 +265,36 @@ async def run_react_agent(
 
     # 工具轮数用完：不再给工具，要求直接基于已有结果回答。
     messages.append(HumanMessage(content="请基于上面已经查到的内容直接回答，不要再调用工具；没查到的部分如实说明。"))
-    final = await llm.ainvoke(messages)
+    final = await _call(llm, messages, on_token)
     return ReactResult(answer=_text(final) or _NO_ANSWER, steps=steps)
+
+
+async def _call(model: Any, messages: list[Any], on_token: TokenCallback | None) -> Any:
+    """调用一次模型。能流式就流式，把正文增量交给 on_token；出现工具调用时撤回已推出的文字。"""
+    if on_token is None or not hasattr(model, "astream"):
+        return await model.ainvoke(messages)
+    merged = None
+    streamed = False
+    calling_tools = False
+    async for chunk in model.astream(messages):
+        merged = chunk if merged is None else merged + chunk
+        if getattr(chunk, "tool_call_chunks", None):
+            if streamed and not calling_tools:
+                await on_token("reset", "")
+            calling_tools = True
+            continue
+        delta = _text_delta(chunk)
+        if delta and not calling_tools:
+            streamed = True
+            await on_token("delta", delta)
+    return merged if merged is not None else await model.ainvoke(messages)
+
+
+def _text_delta(chunk: Any) -> str:
+    content = getattr(chunk, "content", "")
+    if isinstance(content, list):
+        content = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
+    return str(content or "")
 
 
 async def _run_tool(tool: StructuredTool | None, name: str, arguments: dict[str, Any]) -> ToolOutcome:

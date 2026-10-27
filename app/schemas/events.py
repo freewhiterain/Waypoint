@@ -16,6 +16,7 @@ SSEType = Literal[
     "evidence",
     "approval",
     "token",
+    "token_reset",
     "result",
     "error",
     "done",
