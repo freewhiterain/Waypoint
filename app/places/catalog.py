@@ -159,6 +159,14 @@ class PlaceCatalog:
             self._records = records
         return self._records
 
+    def cities(self) -> list[str]:
+        """地点库覆盖的城市，按景点数量从多到少。"""
+        counts: dict[str, int] = {}
+        for (city, category), records in self._load().items():
+            if category == "attractions":
+                counts[city] = len(records)
+        return sorted(counts, key=lambda city: -counts[city])
+
     def places(self, city: str, category: PlaceCategory) -> list[PlaceRecord]:
         """某城市某一类的全部地点，按热门程度排序；没有覆盖时返回空列表。"""
         return list(self._load().get((normalize_city(city), category), []))

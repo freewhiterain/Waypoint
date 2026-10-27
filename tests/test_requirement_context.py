@@ -117,11 +117,3 @@ async def test_form_submission_passes_context_into_planning(monkeypatch):
     assert isinstance(requirement, TravelRequirement)
     assert requirement.adults == 2
     assert requirement.styles == ["美食", "熊猫"]
-
-
-def test_suggested_destinations_follow_their_order_in_the_answer():
-    from app.services.trip_form import suggested_destinations
-
-    answer = "推荐西安：古都文化。其次是成都，美食多；西安的兵马俑值得一去。"
-
-    assert suggested_destinations(answer) == ["西安", "成都"]

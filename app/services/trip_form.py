@@ -22,8 +22,8 @@ from app.models.message import Message
 from app.schemas.events import SSEEvent
 from app.schemas.planning import TravelRequirement
 from app.schemas.tools import ToolResultRequest
-from app.services.open_qa import answer_open_question
-from app.services.planning import KNOWN_DESTINATIONS, render_plan_markdown
+from app.services.destination_recommender import DestinationRecommendation, recommend_destinations
+from app.services.planning import render_plan_markdown
 from app.services.slots import PostgresSlotRepository, confirm_slots
 from app.utils.logger import app_logger
 
@@ -78,17 +78,6 @@ def build_requirement(form_result: dict, arguments: dict | None) -> TravelRequir
     except ValueError as exc:
         app_logger.warning(f"需求上下文与表单冲突，只使用表单值: {exc}")
         return TravelRequirement(**form_result)
-
-
-def recommendation_query(partial_values: dict) -> str:
-    values = json.dumps(partial_values, ensure_ascii=False, sort_keys=True)
-    return f"请根据用户已确认的条件推荐 2~3 个国内旅行目的地，并说明各自适合的理由。已确认的条件：{values}"
-
-
-def suggested_destinations(answer: str, limit: int = 4) -> list[str]:
-    """推荐回答里提到的城市，按出现先后排序；前端据此给出"就去这里"的快捷选项。"""
-    found = sorted((answer.index(name), name) for name in KNOWN_DESTINATIONS if name in answer)
-    return list(dict.fromkeys(name for _position, name in found))[:limit]
 
 
 async def processing_heartbeat(
@@ -190,12 +179,15 @@ async def tool_result_stream(call_id: str, data: ToolResultRequest, user_id: str
             if updated is None:
                 raise ValueError("Tool invocation is unavailable")
 
-            answer = await answer_open_question(recommendation_query(updated.partial_values))
+            recommendation = await recommend_destinations(
+                updated.partial_values, (record.arguments or {}).get("requirement_context")
+            )
+            answer = recommendation.answer
             tool_result = {
                 "tool": data.tool,
                 "status": "awaiting_destination",
                 "partial_values": updated.partial_values,
-                "suggested_destinations": suggested_destinations(answer),
+                "suggested_destinations": recommendation.cities,
             }
             await save_assistant_message(
                 record.conversation_id,

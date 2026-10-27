@@ -309,11 +309,11 @@ async def test_recommendation_saves_partial_values_then_selected_city_resumes(mo
         supervisor_calls.append(requirement)
         return FakePlan(requirement.destination)
 
-    async def recommend(_query):
-        return "可以考虑成都或厦门。"
+    async def recommend(_partial_values, _context=None):
+        return tools.DestinationRecommendation(answer="可以考虑成都或厦门。", cities=["成都"])
 
     configure_tools(monkeypatch, session, repository, supervisor)
-    monkeypatch.setattr(tools, "answer_open_question", recommend)
+    monkeypatch.setattr(tools, "recommend_destinations", recommend)
     recommendation = ToolResultRequest.model_validate(
         {
             "tool": "collect_trip_requirements",
