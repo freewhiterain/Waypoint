@@ -69,11 +69,14 @@ function Activities({ items }: { items: Activity[] }) {
 }
 
 function ResearchProgress({ steps, done }: { steps: Partial<Record<WorkerName, ResearchStep>>; done: boolean }) {
+  // 五个子 Agent 都结束后还有选点、排程、检查和成文几步，单独给出提示，避免看起来像卡住了。
+  const researched = WORKER_ORDER.every((worker) => steps[worker] && steps[worker]!.status !== "running");
+  const label = done ? "研究完成" : researched ? "研究完成，正在选点、排日程…" : "子 Agent 正在并行研究…";
   return (
     <div className="card mb-3 max-w-xl p-4">
       <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
         {done ? <CheckCircle2 className="h-4 w-4 text-moss-500" /> : <Loader2 className="h-4 w-4 animate-spin text-sun-500" />}
-        {done ? "研究完成" : "子 Agent 正在并行研究…"}
+        {label}
       </p>
       <div className="grid grid-cols-5 gap-2">
         {WORKER_ORDER.map((worker) => {

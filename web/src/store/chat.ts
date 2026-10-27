@@ -311,7 +311,8 @@ export const useChat = create<State>((set, get) => {
       let conversationId = get().currentId;
       try {
         if (!conversationId) {
-          const created = await api.createConversation(content.slice(0, 18));
+          // 标题由后端在收到第一条消息时生成。
+          const created = await api.createConversation();
           conversationId = created.id;
           set((state) => ({ currentId: created.id, conversations: [created, ...state.conversations] }));
         }

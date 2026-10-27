@@ -39,6 +39,15 @@ from app.utils.logger import app_logger
 router = APIRouter(prefix="/chat", tags=["对话"])
 
 _RECENT_CONTEXT_LIMIT = 12
+# 建会话时的默认标题；还是这些值时用第一句话代替，侧边栏才分得清各个会话。
+_DEFAULT_TITLES = {"新对话", "新行程", "新的旅程", ""}
+_TITLE_LENGTH = 20
+
+
+def conversation_title_from(message: str) -> str:
+    """取第一句话的开头作标题：去掉换行和多余空白，过长时截断加省略号。"""
+    text = " ".join(message.split())
+    return text if len(text) <= _TITLE_LENGTH else text[:_TITLE_LENGTH] + "…"
 _DIRECT_RESPONSE = "我可以解答旅行问题，也可以在你准备好时开始规划行程。"
 
 
@@ -364,6 +373,9 @@ async def stream_chat(
     conversation = result.scalar_one_or_none()
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+    if (conversation.title or "").strip() in _DEFAULT_TITLES and data.content.strip():
+        conversation.title = conversation_title_from(data.content)
+        await db.commit()
 
     app_state = getattr(getattr(request, "app", None), "state", None)
     registry = getattr(app_state, "planning_registry", None)
