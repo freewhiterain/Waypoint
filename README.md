@@ -1,5 +1,7 @@
 # WayPoint · 多 Agent 旅行规划助手
 
+[![CI](https://github.com/freewhiterain/Waypoint/actions/workflows/ci.yml/badge.svg)](https://github.com/freewhiterain/Waypoint/actions/workflows/ci.yml)
+
 > 每一个落脚点，都有依据。
 
 WayPoint 是一个基于 **LangGraph** 的多 Agent 旅行规划系统。用户用一句话说出想去哪、玩几天、喜欢什么，
