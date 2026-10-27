@@ -94,7 +94,26 @@ def _context_item(message: Message) -> dict[str, str]:
     extra_info = getattr(message, "extra_info", None)
     if isinstance(extra_info, dict) and extra_info.get("kind"):
         item["kind"] = str(extra_info["kind"])
+    if isinstance(extra_info, dict) and isinstance(extra_info.get("assistant_result"), dict):
+        item["content"] = _plan_digest(extra_info["assistant_result"]) or message.content
     return item
+
+
+def _plan_digest(result: dict) -> str:
+    """整份行程 Markdown 动辄两三千字，放进理解和问答的上下文既费 token 又拖慢响应。
+
+    换成一行摘要：保留"行程草稿"字样（理解模块靠它判断用户是在修改已有行程）
+    和每天去了哪些地点（用户说"把熊猫基地换掉"时模型要能对上）。
+    """
+    requirement = result.get("requirement") or {}
+    days = []
+    for day in result.get("itinerary") or []:
+        stops = [slot.get("title", "") for slot in day.get("slots") or [] if slot.get("title")]
+        days.append(f"第{day.get('day')}天：{'、'.join(stops)}")
+    if not days:
+        return ""
+    head = f"已给出行程草稿：{requirement.get('destination', '')}{requirement.get('days', '')}天"
+    return head + "。" + "；".join(days)
 
 
 def _react_llm():

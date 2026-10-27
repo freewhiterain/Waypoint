@@ -153,3 +153,25 @@ def test_producer_still_stamps_the_marker():
     source = (_REPO_ROOT / "app" / "api" / "v1" / "conversations.py").read_text(encoding="utf-8")
 
     assert '"kind": "conversation_offer"' in source
+
+
+def test_plan_messages_enter_the_context_as_a_one_line_digest():
+    from types import SimpleNamespace
+
+    message = SimpleNamespace(
+        role="assistant",
+        content="# 成都2日行程草稿\n" + "很长的描述" * 500,
+        extra_info={
+            "assistant_result": {
+                "requirement": {"destination": "成都", "days": 2},
+                "itinerary": [
+                    {"day": 1, "slots": [{"title": "武侯祠"}, {"title": "成都大熊猫繁育研究基地"}, {"title": "马旺子"}]},
+                    {"day": 2, "slots": [{"title": "杜甫草堂"}]},
+                ],
+            }
+        },
+    )
+
+    item = chat._context_item(message)
+
+    assert item["content"] == "已给出行程草稿：成都2天。第1天：武侯祠、成都大熊猫繁育研究基地、马旺子；第2天：杜甫草堂"
