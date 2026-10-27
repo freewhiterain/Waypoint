@@ -123,9 +123,12 @@ python scripts/eval_dialogues.py --no-plan  # 只看路由和表单预填，不�
 
 ```
 app/
-├── api/           FastAPI 路由与 SSE
-├── services/      主 Agent（意图 + 槽位）、ReAct 问答、需求抽取
+├── api/           FastAPI 路由：只做鉴权、归属校验和响应封装
+├── services/      业务流程：一轮对话（chat_flow）、表单提交与规划（trip_form）、
+│                  主 Agent（意图 + 槽位）、ReAct 问答、需求抽取
 ├── agents/        Supervisor 图、五个子 Agent、行程编排、交通耗时、交通图谱
+├── core/          LLM 工厂、Checkpointer、Store
+├── research/      深度搜索子图
 ├── rag/           文档加载、父子分块、BM25 + Dense + RRF 混合检索、重排、知识图谱
 ├── places/        地点库读取与候选筛选
 ├── governance/    任务事件、证据治理、审批、行程草稿、工具调用幂等
