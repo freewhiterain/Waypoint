@@ -15,6 +15,7 @@ import {
 import type { WorkerName } from "@/api/types";
 import { useChat, type Activity, type ChatMessage, type ResearchStep } from "@/store/chat";
 import { WORKER_LABELS, formatDate } from "@/lib/format";
+import { estimateCost } from "@/lib/cost";
 import { Markdown } from "./Markdown";
 import { TripCard } from "./TripCard";
 import { LogoMark } from "./Logo";
@@ -128,6 +129,7 @@ function PlanSummary({ message }: { message: ChatMessage }) {
       .map((s) => s.title),
   );
   const active = activePlan === plan;
+  const cost = estimateCost(plan);
   return (
     <div className="card max-w-xl overflow-hidden">
       <div className="relative bg-ink-950 px-5 py-5 text-white">
@@ -138,6 +140,7 @@ function PlanSummary({ message }: { message: ChatMessage }) {
         </h3>
         <p className="mt-1 text-sm text-ink-300">
           {formatDate(req.departure_date)} 出发 · {req.adults} 位成人{req.children ? ` · ${req.children} 位儿童` : ""}
+          {cost.total > 0 && ` · 约 ¥${Math.round(cost.total).toLocaleString()}`}
         </p>
       </div>
       <div className="px-5 py-4">

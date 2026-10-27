@@ -1,9 +1,10 @@
 import { lazy, Suspense, useState } from "react";
 import clsx from "clsx";
-import { BedDouble, Car, Clock, Copy, Database, Map as MapIcon, ListOrdered, Ticket, X } from "lucide-react";
+import { BedDouble, Car, Clock, Copy, Database, Map as MapIcon, ListOrdered, Ticket, Wallet, X } from "lucide-react";
 import type { TimeSlot, TravelPlanDraft, WorkerName } from "@/api/types";
 import { useChat } from "@/store/chat";
 import { DAY_COLORS } from "@/lib/places";
+import { estimateCost } from "@/lib/cost";
 import { PERIOD_LABELS, WORKER_LABELS, formatDate, money, splitNotes, weatherIcon } from "@/lib/format";
 
 const PlanMap = lazy(() => import("./PlanMap").then((m) => ({ default: m.PlanMap })));
@@ -55,10 +56,43 @@ function Slot({ slot, first }: { slot: TimeSlot; first: boolean }) {
   );
 }
 
+function CostCard({ plan }: { plan: TravelPlanDraft }) {
+  const cost = estimateCost(plan);
+  if (!cost.total) return null;
+  const rows = [
+    { label: "门票", value: cost.tickets },
+    { label: "餐饮", value: cost.meals },
+    { label: `住宿 · ${cost.nights} 晚`, value: cost.hotel },
+  ];
+  return (
+    <div className="card p-4">
+      <div className="flex items-baseline justify-between">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <Wallet className="h-4 w-4 text-sun-500" /> 费用估算
+        </p>
+        <p className="font-display text-xl font-semibold">¥{Math.round(cost.total).toLocaleString()}</p>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-xl bg-ink-50 px-2 py-2 dark:bg-ink-800">
+            <p className="text-[11px] text-ink-400">{row.label}</p>
+            <p className="text-sm font-semibold">¥{Math.round(row.value).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-4 text-ink-400">
+        按 {cost.people} 人计，住宿按一间房；不含城际交通和市内打车
+        {cost.unknown ? `，另有 ${cost.unknown} 处没有价格数据` : ""}。价格来自数据快照，仅供参考。
+      </p>
+    </div>
+  );
+}
+
 function Timeline({ plan, onFocus }: { plan: TravelPlanDraft; onFocus: (day: number) => void }) {
   const hotel = splitNotes(plan.itinerary[0]?.notes || []).hotel;
   return (
     <div className="space-y-4">
+      <CostCard plan={plan} />
       {hotel && (
         <div className="flex gap-3 rounded-2xl bg-ink-50 p-4 dark:bg-ink-800">
           <BedDouble className="mt-0.5 h-5 w-5 shrink-0 text-ink-500" />
