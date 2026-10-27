@@ -47,6 +47,7 @@ class HybridRetriever:
             if doc.metadata.get("parent_id")
         }
         self.reranker = reranker
+        self._documents_by_id = {chunk_id(doc): doc for doc in documents}
         self._init_bm25()
 
     def _init_bm25(self):
@@ -115,6 +116,13 @@ class HybridRetriever:
             except Exception as exc:
                 app_logger.warning(f"Dense 检索失败，本次查询退化为纯 BM25：{type(exc).__name__}: {exc}")
                 dense_docs = []
+            # 持久化的向量库可能比当前语料旧，也可能装着别的城市/类别：只认当前
+            # 检索器自己的切片，并换成内存里的那份，保证父文档回溯和元数据一致。
+            dense_docs = [
+                (self._documents_by_id[chunk_id(doc)], score)
+                for doc, score in dense_docs
+                if chunk_id(doc) in self._documents_by_id
+            ]
         app_logger.debug(f"Dense 检索到 {len(dense_docs)} 个候选")
 
         # RRF 融合：保留宽候选池，让重排器有挑选空间而不只是调序
