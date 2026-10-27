@@ -80,3 +80,12 @@ def test_log_redaction_masks_common_credentials():
     assert "hello" not in value
     assert "jwt-value" not in value
     assert value.count("***") == 3
+
+
+@pytest.mark.asyncio
+async def test_rule_extractor_reads_liang_as_two_days():
+    from app.services.planning import RequirementExtractor
+
+    draft = await RequirementExtractor().extract("带爸妈去成都玩两天，2026-11-02出发", use_llm=False)
+
+    assert (draft.destination, draft.days) == ("成都", 2)

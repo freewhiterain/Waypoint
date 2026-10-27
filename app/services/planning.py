@@ -116,14 +116,15 @@ class RequirementExtractor:
         if destination_match is None:
             destination_match = re.search(r"(?:去|规划|前往)([^，,。\s\d一二三四五六七八九十]{2,12}?)(?=\d|[一二三四五六七八九十]|旅|游|玩|，|,|。|$)", text)
         destination = destination_match.group(1) if destination_match else RequirementExtractor._bare_destination(text)
-        days_match = re.search(r"(\d{1,2}|[一二三四五六七八九十])(?:天|日)(?:游|行程)", text)
+        # "玩两天"很常见，天数里也要认"两"。
+        days_match = re.search(r"(\d{1,2}|[一两二三四五六七八九十])(?:天|日)(?:游|行程)", text)
         if days_match is None:
-            days_match = re.search(r"(?:游玩|旅游|旅行|行程|玩)(\d{1,2}|[一二三四五六七八九十])天", text)
+            days_match = re.search(r"(?:游玩|旅游|旅行|行程|玩)(\d{1,2}|[一两二三四五六七八九十])天", text)
         date_match = re.search(r"(20\d{2})[-年/](\d{1,2})[-月/](\d{1,2})日?", text)
         days = None
         if days_match:
             raw = days_match.group(1)
-            days = int(raw) if raw.isdigit() else CHINESE_NUMBERS.get(raw)
+            days = int(raw) if raw.isdigit() else PEOPLE_NUMBERS.get(raw)
         departure_date = None
         if date_match:
             departure_date = date(*(int(value) for value in date_match.groups()))
