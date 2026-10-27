@@ -47,10 +47,14 @@ _OPENING_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至到]\s*(\d{1,2}):(\d{2
 # 时段与开放时间的最低要求：上午 11 点前要开门，下午 15 点后才关门。
 _PERIOD_WINDOWS = {"morning": (11 * 60, None), "afternoon": (None, 15 * 60)}
 # 用户表达了对吃的兴趣时，每天在上午景点附近加一顿午餐（默认只排晚餐）。
-# 不能用单字"吃"：food_preferences 里常见的"不吃辣"也会命中。
+# food_preferences 里不能用单字"吃"匹配：常见的"不吃辣"也会命中。兴趣（styles）里没有这种否定说法，
+# 而且模型常把"想吃火锅"记成"火锅"而不是"美食"，所以兴趣里带"吃"或具体吃食也算。
 _FOOD_INTEREST_WORDS = ("美食", "小吃", "吃货", "好吃", "餐厅", "馆子", "探店", "夜宵", "地道菜", "特色菜")
+_FOOD_STYLE_WORDS = ("吃", "火锅", "烧烤", "海鲜", "烤鸭", "早茶", "串串", "面馆")
 # 午餐要在上午景点附近：超过这个代价（分钟量级）宁可不排。
 MAX_LUNCH_MINUTES = 30
+# 晚饭后去看夜景，路上最多能接受的代价。
+MAX_NIGHT_MINUTES = 45
 # 午餐时段要开着：11:30 前开门、13:30 后才关门。
 _LUNCH_WINDOW = (11 * 60 + 30, 13 * 60 + 30)
 
@@ -85,9 +89,26 @@ def _avoided(option: CandidateOption, requirement: TravelRequirement) -> bool:
     return any(term and (term in option.name or option.name in term) for term in requirement.avoid_places)
 
 
+_NIGHT_WORDS = ("夜景", "夜游", "灯光秀", "不夜城", "夜市")
+_NIGHT_INTEREST_WORDS = ("夜景", "夜游", "夜市", "夜生活", "灯光")
+
+
+def is_night_spot(option: CandidateOption) -> bool:
+    """名字里带"夜景/夜游/灯光秀"的地点只适合晚上去，不能排进上午和下午。"""
+    return any(word in option.name for word in _NIGHT_WORDS)
+
+
+def wants_night(requirement: TravelRequirement) -> bool:
+    return any(word in "".join(requirement.styles) for word in _NIGHT_INTEREST_WORDS)
+
+
 def _candidates(results: list[WorkerResult], worker: str, requirement: TravelRequirement) -> list[CandidateOption]:
-    """可供选点的候选：去掉用户明确不想去的。"""
-    return [option for option in _options(results, worker) if not _avoided(option, requirement)]
+    """可供选点的候选：去掉用户明确不想去的；景点里去掉只适合晚上去的（另由夜间时段安排）。"""
+    return [
+        option
+        for option in _options(results, worker)
+        if not _avoided(option, requirement) and not (worker == "attractions" and is_night_spot(option))
+    ]
 
 
 def _relaxed_hint(requirement: TravelRequirement) -> str:
@@ -461,8 +482,10 @@ def _best_order(place_ids: list[str], hotel_id: str | None, costs: TravelCosts) 
 
 
 def wants_lunch(requirement: TravelRequirement) -> bool:
-    text = "".join([*requirement.styles, *requirement.food_preferences])
-    return any(word in text for word in _FOOD_INTEREST_WORDS)
+    styles = "".join(requirement.styles)
+    if any(word in styles for word in (*_FOOD_INTEREST_WORDS, *_FOOD_STYLE_WORDS)):
+        return True
+    return any(word in "".join(requirement.food_preferences) for word in _FOOD_INTEREST_WORDS)
 
 
 def _open_for_lunch(option: CandidateOption) -> bool:
@@ -473,12 +496,13 @@ def _open_for_lunch(option: CandidateOption) -> bool:
     return window is None or (window[0] <= _LUNCH_WINDOW[0] and window[1] >= _LUNCH_WINDOW[1])
 
 
-def _pick_lunch(pool: list[str], used: set[str], near: str, costs: TravelCosts) -> str | None:
+def _pick_nearby(pool: list[str], used: set[str], near: str, costs: TravelCosts, max_minutes: int) -> str | None:
+    """午餐、夜景这类"顺路加一站"的时段：在离 near 不超过 max_minutes 的候选里取最近的。"""
     candidates = [place_id for place_id in pool if place_id not in used]
     if not candidates:
         return None
     best = min(candidates, key=lambda place_id: (costs.cost(near, place_id), candidates.index(place_id)))
-    return best if costs.cost(near, best) <= MAX_LUNCH_MINUTES else None
+    return best if costs.cost(near, best) <= max_minutes else None
 
 
 def build_itinerary(
@@ -505,6 +529,13 @@ def build_itinerary(
     dinner_pool = [item.id for item in selection.dinners]
     backup_dinners = [option.id for option in _candidates(results, "food", requirement) if option.id not in dinner_pool]
     used_dinners: set[str] = set()
+    night_options = {
+        option.id: option
+        for option in _options(results, "attractions")
+        if is_night_spot(option) and not _avoided(option, requirement)
+    }
+    night_pool = list(night_options) if wants_night(requirement) else []
+    used_nights: set[str] = set()
     # 午餐从没被选作晚餐的餐饮候选里就近挑，不交给 LLM：它只关心"离上午景点近、中午开门"。
     lunch_pool = (
         [
@@ -524,7 +555,7 @@ def build_itinerary(
         for period in ("morning", "afternoon"):
             option = periods.get(period)
             if period == "afternoon" and previous is not None and periods.get("morning") is not None:
-                lunch_id = _pick_lunch(lunch_pool, used_dinners, previous, costs)
+                lunch_id = _pick_nearby(lunch_pool, used_dinners, previous, costs, MAX_LUNCH_MINUTES)
                 if lunch_id is not None:
                     used_dinners.add(lunch_id)
                     slots.append(_slot("lunch", options[lunch_id], costs.minutes(previous, lunch_id)))
@@ -552,9 +583,22 @@ def build_itinerary(
         if dinner_id is not None:
             used_dinners.add(dinner_id)
             slots.append(_slot("evening", options[dinner_id], costs.minutes(previous, dinner_id)))
+            previous = dinner_id
         else:
             reason = "能查到的餐厅前几晚已经安排过，这晚可以自由选择。" if used_dinners else "没有带证据的餐饮候选可安排。"
             slots.append(TimeSlot(period="evening", title="自由安排晚餐", description=reason))
+
+        # 想看夜景的，晚饭后就近安排一个夜景点。
+        night_id = _pick_nearby(night_pool, used_nights, previous, costs, MAX_NIGHT_MINUTES) if previous else None
+        if night_id is not None:
+            used_nights.add(night_id)
+            # "重庆夜游""夜游两江"其实是同一种活动，排过一个就把同名的都排除掉。
+            used_nights.update(
+                other
+                for other, candidate in night_options.items()
+                if same_place(candidate.name, night_options[night_id].name, requirement.destination)
+            )
+            slots.append(_slot("night", night_options[night_id], costs.minutes(previous, night_id)))
 
         notes = [] if place_ids else [f"第{index + 1}天已无未使用的景点候选。"]
         itinerary.append(

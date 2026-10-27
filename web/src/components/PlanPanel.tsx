@@ -29,6 +29,7 @@ const PERIOD_STYLES = {
   lunch: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   afternoon: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
   evening: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  night: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
 };
 
 const isFree = (slot: TimeSlot) => slot.title.endsWith("自由活动") || slot.title.startsWith("自由安排");

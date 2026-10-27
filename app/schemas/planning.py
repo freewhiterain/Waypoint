@@ -136,7 +136,7 @@ class WorkerResult(BaseModel):
 
 
 class TimeSlot(BaseModel):
-    period: Literal["morning", "lunch", "afternoon", "evening"]
+    period: Literal["morning", "lunch", "afternoon", "evening", "night"]
     title: str
     description: str = ""
     location: str | None = None

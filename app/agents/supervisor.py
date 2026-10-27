@@ -162,7 +162,7 @@ def _subagent_responses_from_state(state: SupervisorState) -> list[SubagentRespo
 
 
 class _SlotText(BaseModel):
-    period: Literal["morning", "lunch", "afternoon", "evening"]
+    period: Literal["morning", "lunch", "afternoon", "evening", "night"]
     description: str = Field(description="这个时段的一两句描述")
 
 

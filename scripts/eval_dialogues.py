@@ -126,6 +126,19 @@ def scenarios() -> list[Scenario]:
             must_contain=["上海", "博物馆"],
         ),
         Scenario(
+            name="chongqing_night_view",
+            turns=[f"{soon}和女朋友去重庆玩两天，想吃火锅看夜景，帮我规划"],
+            expect_prefill={"destination": "重庆", "days": 2, "departure_date": soon},
+            must_contain=["**夜间**", "**中午**"],
+            must_not_contain=["第3天"],
+        ),
+        Scenario(
+            name="hangzhou_elderly_relaxed",
+            turns=[f"{soon}带爸妈去杭州玩两天，老人腿脚不好别太累，帮我规划"],
+            expect_prefill={"destination": "杭州", "days": 2, "departure_date": soon},
+            must_contain=["轻松"],
+        ),
+        Scenario(
             name="chengdu_revise_after_plan",
             turns=[f"帮我规划成都两天的行程，{soon}出发"],
             revise=["把熊猫基地换成别的，第二天轻松一点"],

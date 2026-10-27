@@ -34,6 +34,8 @@ MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 40, 8
 # 不适合当正餐的类型。
 _NOT_A_MEAL = {"面包甜点", "咖啡店", "酒吧/酒馆", "茶馆/茶室", ""}
 _SPICY = {"川菜", "湘菜", "火锅"}
+# 名字里带这些词的地点只适合晚上去。
+_NIGHT_WORDS = ("夜景", "夜游", "灯光秀", "不夜城", "夜市")
 # 类型不辣、但从店名就能看出主打辣味的（"泰式海鲜火锅"的类型是东南亚菜）。
 _SPICY_NAME_WORDS = ("火锅", "麻辣", "香辣", "串串", "冒菜", "钵钵鸡", "辣子")
 # 源数据按热门程度排序，排在前面的多是酒店里的高档餐厅（上海前 30 家人均中位数 500 元）。
@@ -186,6 +188,7 @@ class PlaceCatalog:
         if category == "hotel":
             return records[:HOTEL_SHORTLIST]
         limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
+        night_extra: list[PlaceRecord] = []
         if category == "food":
             price_cap = None if _wants_upscale(requirement) else _price_cap(records)
             records = [
@@ -196,15 +199,19 @@ class PlaceCatalog:
             ]
             keywords = [*requirement.food_preferences, *requirement.styles]
         else:
-            # 行程只排上午和下午两个景点时段，夜游类项目排不进去。
-            records = [record for record in records if "夜游" not in record.name]
+            # 夜景、夜游类地点排程时只会放进晚饭后的夜间时段：不占白天景点的名额，
+            # 用户想看夜景时另外追加几个，没说时不要。
+            night = [record for record in records if any(word in record.name for word in _NIGHT_WORDS)]
+            records = [record for record in records if record not in night]
+            if any(word in "".join(requirement.styles) for word in ("夜景", "夜游", "夜市", "夜生活", "灯光")):
+                night_extra = night[: requirement.days + 1]
             keywords = list(requirement.styles)
         matched = [record for record in records if _matches(record, keywords)]
         # 偏好命中的最多占一半，其余仍按热门程度取，避免"喜欢历史"就排满冷门古迹。
         preferred = matched[: limit // 2]
         chosen = {record.id for record in preferred}
         rest = [record for record in records if record.id not in chosen][: limit - len(preferred)]
-        return preferred + rest
+        return preferred + rest + night_extra
 
 
 def _matches(record: PlaceRecord, keywords: list[str]) -> bool:

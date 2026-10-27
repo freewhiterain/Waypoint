@@ -344,3 +344,52 @@ def test_a_relaxed_pace_style_makes_every_day_light():
 
     assert day_capacities(requirement(days=3, styles=["适合老人", "节奏轻松"])) == [1, 1, 1]
     assert day_capacities(requirement(days=2, styles=["美食"])) == [2, 2]
+
+
+def _night_results():
+    results = chengdu_results(LEGS + [leg("火锅", "锦江夜游", 10), leg("武侯祠", "锦江夜游", 15)])
+    results[0].options.append(option("锦江夜游", "attractions"))
+    return results
+
+
+@pytest.mark.asyncio
+async def test_night_spots_go_after_dinner_for_night_view_lovers():
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="锦江夜游"), SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1, styles=["夜景"]), _night_results(), llm=llm)
+
+    periods = [(slot.period, slot.title) for slot in itinerary[0].slots]
+    assert periods[-1] == ("night", "锦江夜游")
+    assert ("morning", "锦江夜游") not in periods and ("afternoon", "锦江夜游") not in periods
+
+
+@pytest.mark.asyncio
+async def test_night_spots_are_never_scheduled_in_daytime():
+    itinerary, _ = await plan_itinerary(requirement(days=2), _night_results(), llm=None)
+
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    assert "锦江夜游" not in titles
+
+
+def test_a_specific_dish_in_interests_counts_as_food_interest():
+    from app.agents.itinerary_planner import wants_lunch
+
+    assert wants_lunch(requirement(styles=["火锅", "夜景"]))
+    assert not wants_lunch(requirement(styles=["夜景"], food_preferences=["不吃辣"]))
+
+
+@pytest.mark.asyncio
+async def test_two_names_for_the_same_night_activity_are_not_both_scheduled():
+    results = _night_results()
+    # 真实数据里是"重庆夜游"和"夜游两江"：去掉城市名后主干都是"夜游"。
+    results[0].options.append(option("成都夜游", "attractions"))
+    results[3].options.append(leg("小吃", "成都夜游", 5))
+
+    itinerary, _ = await plan_itinerary(requirement(days=2, styles=["夜景"]), results, llm=None)
+
+    nights = [slot.title for day in itinerary for slot in day.slots if slot.period == "night"]
+    assert len(nights) == 1
