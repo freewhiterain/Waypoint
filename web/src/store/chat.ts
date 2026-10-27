@@ -177,6 +177,8 @@ function rebuild(history: HistoryMessage[]): ChatMessage[] {
         trip.values = { ...trip.values, ...stringify(result.partial_values || {}) };
         trip.recommendation = item.content;
         trip.suggestions = result.suggested_destinations || [];
+        // 推荐内容已经显示在表单卡片里，不再作为单独一条消息重复显示。
+        continue;
       }
     }
     if (chat?.trip) trips.set(chat.trip.callId, chat.trip);

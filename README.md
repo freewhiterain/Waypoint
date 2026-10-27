@@ -11,6 +11,14 @@ WayPoint 是一个基于 **LangGraph** 的多 Agent 旅行规划系统。用户�
 核心原则是**确定性优先**：日期、分天、先后顺序、交通耗时、开放时间都由代码算和查，模型只负责理解偏好和写描述，
 不编造班次、价格、营业时间或天气。
 
+## 界面预览
+
+| 逐日行程 · 费用估算 | 地图路线 |
+| --- | --- |
+| ![行程](assets/screenshots/plan.png) | ![地图](assets/screenshots/map.png) |
+| **按条件推荐城市（深色模式）** | **看过行程后提修改，重新规划** |
+| ![推荐](assets/screenshots/recommend-dark.png) | ![修改](assets/screenshots/revise.png) |
+
 ## 功能一览
 
 | 模块 | 说明 |
