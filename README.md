@@ -1,198 +1,162 @@
-# 知行旅行助手
+# WayPoint · 多 Agent 旅行规划助手
 
-基于 LangGraph 的企业级智能旅行规划系统。
+> 每一个落脚点，都有依据。
 
-## 快速启动
+WayPoint 是一个基于 **LangGraph** 的多 Agent 旅行规划系统。用户用一句话说出想去哪、玩几天、喜欢什么，
+系统先理解意图、补全缺的信息，再让五个子 Agent 并行研究景点、住宿、美食、天气和市内交通，
+最后由「LLM 选点 + 算法排程 + 约束检查」生成一份按真实路程排好的逐日行程，并在地图上画出每天的路线。
 
-### 第零步：安装依赖
+核心原则是**确定性优先**：日期、分天、先后顺序、交通耗时、开放时间都由代码算和查，模型只负责理解偏好和写描述，
+不编造班次、价格、营业时间或天气。
+
+## 功能一览
+
+| 模块 | 说明 |
+| --- | --- |
+| 对话理解 | 每轮一次 LLM 结构化输出同时给出意图和槽位变化；槽位经代码校验后跨轮累积；无 Key 时退回规则 |
+| 问答线路 | ReAct 循环（最多 4 轮工具调用）：查本地资料、对某城市某方面做专项研究、估算地点间路程 |
+| 规划线路 | 表单只问缺的槽位，三项齐全时直接确认；可让 AI 推荐目的地 |
+| 并行研究 | Supervisor 图按依赖分两批：景点 / 住宿 / 美食 / 天气并行，交通等前面的地点出来再算 |
+| 行程编排 | LLM 只能按 id 选点 → 算法按交通耗时分天排序 → 检查开放时间和每日路程，违规原因反馈给 LLM 重选（最多 3 轮） |
+| 证据治理 | 每条事实带来源、查询时间和置信度；证据不支持的地点整条丢弃，不支持的属性只去掉那一项 |
+| 前端 | React 单页应用：流式对话、研究进度、逐日时间线、Leaflet 地图路线、研究依据、深浅色主题 |
+| 评测 | 500 个单元/集成测试 + 端到端对话评测脚本（路由、表单预填、行程内容断言） |
+
+## 架构
+
+```mermaid
+flowchart LR
+    U[用户] -->|SSE| API[FastAPI]
+    API --> MA[主 Agent<br/>意图 + 槽位]
+    MA -->|问答| RA[ReAct Agent]
+    MA -->|规划| FORM[需求表单]
+    FORM --> SUP
+
+    subgraph SUP[Supervisor 图 · LangGraph]
+        direction LR
+        P[planner] --> D[dispatch]
+        D --> W1[景点] & W2[住宿] & W3[美食] & W4[天气]
+        W1 & W2 & W3 --> W5[交通]
+        W4 & W5 --> R[行程编排<br/>选点 → 排程 → 检查]
+        R --> S[成文]
+    end
+
+    W1 & W2 & W3 -.-> PL[(地点库<br/>1.2 万条)]
+    W1 & W3 -.-> RAG[(Hybrid RAG<br/>BM25 + Dense + RRF)]
+    W4 -.-> OM[Open-Meteo]
+    W5 -.-> AMAP[高德 / 交通图谱]
+    SUP -.-> PG[(PostgreSQL<br/>Checkpointer · 事件 · 草稿)]
+```
+
+### 一次规划的数据流
+
+1. **理解**（`app/services/main_agent.py`）：模型返回 `TurnUnderstanding`（意图 + 槽位变化）。
+   `app/services/slots.py` 校验每个值是否有依据：目的地必须是用户说过的或接受的推荐，"国庆"不会被换算成日期，
+   天数必须有"数字 + 时间单位"作依据。
+2. **研究**（`app/agents/supervisor.py` + `app/agents/subagents/`）：地点库覆盖的 10 个城市直接取结构化候选
+   （名称、坐标、开放时间、价格原样带上，不经过模型）；其他城市先检索证据再让模型做结构化分析。
+3. **交通**：景点、住宿、餐厅两两配对算耗时，数据来源依次为交通图谱 → 高德 → 坐标直线距离 → 同区/跨区粗估，
+   高德结果写回图谱；没有真实数据时不编分钟数。
+4. **编排**（`app/agents/itinerary_planner.py`）：参考 ItiNera（LLM 理解偏好、算法保证顺路）和
+   LLM-Modulo（外部检查器把关）。模型空返回时先重试，再退回规则选点；被"太远"挡下的景点补进还有空位的那天。
+5. **成文**：模型在排好的模板上改写描述，地点、时段、耗时、营业时间、价格一律以模板为准。
+
+## 快速开始
+
+### 1. 依赖
+
+- Python 3.11+、Node 18+、Docker Desktop
+- 本地 [Ollama](https://ollama.com/)（Embedding 用，不需要外部 Key）
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
-
-`dev` 可选依赖包含 pytest；只部署服务可以去掉 `[dev]`。
-
-### 第一步：配置环境变量
-
-编辑 `.env` 文件，填入必要的 API Key：
-
-```
-LLM_API_KEY=sk-你的模型APIKey         # 必填
-LLM_MODEL=deepseek-v4-flash           # 默认值，按供应商调整
-LLM_BASE_URL=https://api.deepseek.com # 默认值，OpenAI 兼容接口即可
-LANGSMITH_API_KEY=你的LangSmithKey    # 推荐
-ENABLE_EXTERNAL_TOOLS=true            # 打开后才会调用高德和联网搜索
-AMAP_API_KEY=你的高德Key              # 天气、地点间耗时
-TAVILY_API_KEY=你的TavilyKey          # 联网搜索
-```
-
-DeepSeek 注册：https://platform.deepseek.com/
-
-对话模型只要求 OpenAI 兼容接口，换供应商改这三个变量即可，不用动代码。
-注意 `LLM_DISABLE_THINKING`：DeepSeek 的 thinking 模式不支持强制 `tool_choice`，
-而结构化输出正是靠它，保持 `true` 才能让路由、需求抽取、子 Agent 分析和行程合成
-拿到结构化结果。
-
-### 第一步之二：启动本地 Ollama（Embedding 用）
-
-Embedding 走本地 Ollama，不依赖任何外部 API Key，也不受对话模型供应商影响：
-
-```powershell
 ollama pull qwen3-embedding:4b
 ```
 
-未启动 Ollama 时 Dense 检索会退化成纯 BM25（有日志告警，不会中断请求）。
+### 2. 配置
 
-### 第二步：启动 Docker 数据库
+复制 `.env.example` 为 `.env`，至少填写：
 
-```powershell
-# PostgreSQL (pgvector)
-docker run -d `
-  --name travel_postgres `
-  -e POSTGRES_DB=ai_travel_db `
-  -e POSTGRES_USER=travel_user `
-  -e POSTGRES_PASSWORD=travel123456 `
-  -p 5432:5432 `
-  --restart unless-stopped `
-  pgvector/pgvector:pg17
-
-# Redis
-docker run -d `
-  --name travel_redis `
-  -p 6379:6379 `
-  --restart unless-stopped `
-  redis:7-alpine redis-server --appendonly yes
+```
+LLM_API_KEY=sk-...                    # 任意 OpenAI 兼容接口，默认 DeepSeek
+JWT_SECRET_KEY=一段独立的随机字符串
+ENABLE_EXTERNAL_TOOLS=true            # 打开后才会查天气、高德、联网搜索
+AMAP_API_KEY=...                      # 可选：地点间真实耗时
+TAVILY_API_KEY=...                    # 可选：深入研究时联网搜索
 ```
 
-### 第三步：初始化数据库
+`LLM_DISABLE_THINKING` 保持 `true`：DeepSeek 的 thinking 模式不支持强制 `tool_choice`，而结构化输出依赖它。
+
+### 3. 一键启动（Windows）
 
 ```powershell
-python scripts/init_db.py
+start.bat
 ```
 
-### 第四步：测试 LLM 连接
+脚本会拉起 PostgreSQL（pgvector）和 Redis 容器、初始化数据库、首次运行时构建前端，然后启动后端并打开
+http://localhost:18000/ui/ 。API 文档在 http://localhost:18000/docs 。
+
+### 手动启动
 
 ```powershell
-python scripts/test_llm.py
+python scripts/init_db.py          # 业务表、Checkpointer、Store、pgvector
+python scripts/test_llm.py         # 验证模型连接和结构化输出
+cd web; npm install; npm run build; cd ..
+python app/run.py
 ```
 
-### 第五步：运行对话测试
+前端开发：`cd web && npm run dev`，访问 http://localhost:5173/ui/（`/api` 自动代理到 18000）。
+
+## 测试与评测
 
 ```powershell
-python -m pytest -q
+python -m pytest -q                       # 单元 + 集成测试（默认跳过需要真实模型和网络的用例）
+python scripts/eval_dialogues.py          # 端到端对话评测，需先启动服务
+python scripts/eval_dialogues.py --no-plan  # 只看路由和表单预填，不跑规划
 ```
 
-### 第六步：初始化 RAG（可选，需先启动 Ollama 并拉取 embedding 模型）
-
-```powershell
-python scripts/init_rag.py
-```
-
-### 第七步：启动 FastAPI 服务
-
-```powershell
-python app/main.py
-# UI: http://localhost:18000/ui
-# API docs: http://localhost:18000/docs
-```
+`eval_dialogues.py` 覆盖完整槽位、缺日期、多轮补充、中途改目的地、天气问答、目的地推荐、闲聊和越界请求等场景，
+逐条断言路由动作、表单预填值和最终行程里必须出现/不能出现的内容，完整输出写到 `logs/eval_dialogues.json`。
 
 ## 项目结构
 
 ```
 app/
-├── core/          # Checkpointer、Store
-├── agents/        # Supervisor 图、子 Agent、排日程、交通耗时
-├── services/      # 主 Agent（意图 + 槽位）、ReAct 问答、需求提取
-├── governance/    # 事件、审批、偏好、行程草稿仓库
-├── rag/           # 混合检索、向量存储
-├── places/        # 地点库的读取和候选筛选
-├── mcp_core/      # MCP 服务器和客户端
-├── api/           # FastAPI 路由
-├── models/        # SQLAlchemy ORM 模型
-└── schemas/       # Pydantic 请求/响应模型
-scripts/           # 初始化和测试脚本
-tests/             # 测试文件
-data/documents/    # RAG 文档库（放 .md 攻略文件）
-data/places/       # 地点库：景点、餐厅、住宿的结构化数据
+├── api/           FastAPI 路由与 SSE
+├── services/      主 Agent（意图 + 槽位）、ReAct 问答、需求抽取
+├── agents/        Supervisor 图、五个子 Agent、行程编排、交通耗时、交通图谱
+├── rag/           文档加载、父子分块、BM25 + Dense + RRF 混合检索、重排、知识图谱
+├── places/        地点库读取与候选筛选
+├── governance/    任务事件、证据治理、审批、行程草稿、工具调用幂等
+├── mcp_core/      MCP 客户端与自建天气/搜索 Server、超时重试熔断
+├── memory/        长期偏好与历史行程
+├── models/        SQLAlchemy 模型
+└── schemas/       Pydantic 契约
+web/               React + TypeScript + Tailwind 前端
+scripts/           初始化、数据导入、评测脚本
+tests/             pytest
+data/places/       地点库（ChinaTravel 数据集，CC BY 4.0）
+data/documents/    RAG 文档（开发用模拟资料）
 ```
-
-## 技术栈
-
-LangGraph 1.0 · LangChain 1.0 · FastAPI · PostgreSQL 17 + pgvector · ChromaDB · DeepSeek（OpenAI 兼容）· 本地 Ollama Embedding · SSE
-
-## 当前实现状态
-
-### 对话：两条线路 + 三个槽位
-
-每一轮消息先由主 Agent 调用一次模型，同时得到两样东西：这句话的意图，以及从这句话里能填的槽位。
-
-- **三个必填槽位**：目的地、出发日期、天数。另外还会记人数、出发地、兴趣、饮食偏好。槽位存在会话上（`conversation.extra_info["trip_slots"]`），不管这一轮走哪条线路都会累积，前面聊到的信息在后面规划时都能用上。
-- **模型填的值要过一遍代码校验**（`app/services/slots.py`）：目的地必须是用户说过的，或是用户明确接受的推荐；"国庆""春节"这类假期词不会被换算成日期；天数必须有"数字 + 时间单位"作依据。校验不过的值直接丢弃。
-- **线路 1：问答**（开放问题、推荐目的地、单项研究）。走 ReAct 循环（`app/services/react_agent.py`），模型自己决定查什么，最多 4 轮工具调用。三个只读工具：查本地旅行资料、对某城市某方面做专项研究、查同城几个地点之间的交通耗时。
-- **线路 2：规划**。用户想规划时：三个槽位有缺的，表单只问缺的那几项；三个都齐了，先显示"将为你规划：目的地 · 日期 · 天数"，用户确认后才开始。
-- 没配 `LLM_API_KEY` 或模型出错时，意图判断退回关键词规则，槽位退回正则提取，线路 1 退回固定的检索问答。
-
-### 规划：四个阶段
-
-```
-planner → dispatch ⇄ run_worker → route_planner → synthesize
-```
-
-1. **研究**。五个子 Agent（`app/agents/subagents/`）分两批跑：景点、住宿、美食、天气先跑；交通后跑，因为它要用前面查到的地点。
-   - 地点库覆盖的城市：景点、美食、住宿直接从地点库取候选（按热门程度，命中用户偏好的优先），名称、坐标、开放时间、价格原样带上，不经过模型。
-   - 其他城市：先检索证据，再让模型做结构化分析；证据不支持的地点整条丢弃，证据不支持的描述、价格、属性只去掉那一项。
-2. **交通**。交通子 Agent 查的是城市内的交通：把景点、住宿、餐饮两两配对，算出每一段的耗时和距离。数据来源按顺序是：交通图谱（表 `travelroute`）→ 高德 → 坐标直线距离 → 按"是否同一个区"粗略判断。高德查到的结果会写回图谱，下次直接用。没有真实数据时只给直线距离或"同区 / 跨区"的判断，不编分钟数。为了控制请求量，只给排在前面的候选算真实耗时（10 个景点、2 个住宿、5 个餐厅），其余地点排顺序时按坐标比较远近。
-3. **排日程**（`app/agents/itinerary_planner.py`）。模型从候选里按 id 选点、选落脚的住宿；分天和先后顺序由算法按交通耗时排；排完检查开放时间和每天的路上时间（没有真实耗时的按坐标估算，防止把相隔几十公里的地点排进同一天），不合格就把原因反馈给模型重选，最多 3 轮。没配模型时用规则选点。
-4. **成文**。模型在排好的行程上改写每个时段的描述，不能更换地点或调换顺序。每天的天气直接取自天气证据，显示在当天行程的第一行；选中的住宿显示在第一天。
-
-### 数据来源
-
-- **地点库**（`data/places/`）：景点、餐厅、住宿的结构化数据，覆盖北京、上海、广州、深圳、成都、重庆、杭州、南京、苏州、武汉 10 个城市，共约 1.2 万条。有坐标、开放时间、门票和人均价格、推荐菜。数据来自 ChinaTravel 沙盒（CC BY 4.0），是静态快照，价格和营业时间以实际为准。来源说明见 `data/places/README.md`。
-- **本地资料**：`data/documents/` 下的 Markdown，开发用的模拟数据（结果里 `is_mock=True`），只有成都。地点库没有覆盖的城市会用到它；这些城市目前没有景点资料，行程里会是"自由活动"。
-- **Open-Meteo**（需要 `ENABLE_EXTERNAL_TOOLS=true`，不需要 Key）：天气预报，当天起 16 天，带降水概率。免费版仅限非商业用途。16 天之外查不到天气，行程里不显示。
-- **高德**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `AMAP_API_KEY`）：地点之间的驾车耗时和距离。天气只在 Open-Meteo 查不到时作为备用（4 天）。
-- **联网搜索**（需要 `ENABLE_EXTERNAL_TOOLS=true` 和 `TAVILY_API_KEY`）：用户要求"深入研究"时使用。
-- **本地知识图谱**：离线脚本 `scripts/build_knowledge_graph.py` 从本地资料里抽取实体和"位于 / 临近"关系，写入 `knowledgeentity`、`knowledgerelation` 两张表；景点和住宿两个子 Agent 会把这层关系作为额外证据。交通图谱 `travelroute` 的两端也是这里的实体。
-- 没有可用数据源时，系统会明确说明查不到，不生成虚构的班次、价格、营业时间或天气。
-
-### 其他
-
-- 预算功能已整体移除，等重新设计。候选上的价格字段 `estimated_cost` 保留。
-- 行程草稿常驻（`models/draft.py` + `governance/drafts.py`）：每个会话一份可增量编辑的草稿，版本递增；正式行程仍需审批落库。
-- Hybrid RAG：稳定文档/切片 ID、BM25、Dense、RRF、相关性重排和父文档回溯。
-- Evidence：来源、URL、查询时间、有效期、置信度和冲突检查。
-- MCP/API 可靠性：超时、有限重试、请求去重、TTL 缓存、熔断和明确降级。
-- LangGraph Checkpointer、任务事件持久化（含 task_failed）和用户隔离。
-- 用户明确批准后才写入长期偏好或覆盖正式行程。
-- 不提供购票、预订、支付、退款、取消、改签或外部消息发送。
-
-## 关键配置
-
-复制 `.env.example` 为 `.env`，至少配置独立的 `JWT_SECRET_KEY` 和 `LLM_API_KEY`。Embedding 走本地 Ollama（`EMBEDDING_BASE_URL` / `EMBEDDING_MODEL`），不需要外部 Key。实时数据需要显式设置 `ENABLE_EXTERNAL_TOOLS=true`，并配置相应的 `AMAP_API_KEY`、`TAVILY_API_KEY` 或 MCP 服务地址。
-
-### CrossEncoder 重排（可选）
-
-默认用词频重叠的 `RelevanceReranker`。设置 `ENABLE_CROSS_ENCODER_RERANK=true` 后改用 `app/rag/reranker.py` 的 `CrossEncoderReranker`，对同义改写更敏感。`CROSS_ENCODER_MODEL` 默认 `BAAI/bge-reranker-base`（约 1.1GB，中文效果和体积较均衡）；也可换 `BAAI/bge-reranker-large`（约 2.2GB，更准更慢）。首次调用会从 HuggingFace 下载模型到本地缓存，需要网络。
-
-验证：`RUN_CROSS_ENCODER_TESTS=1 python -m pytest tests/test_cross_encoder_real_model.py -v`。
 
 ## 主要接口
 
-- `POST /api/v1/chat/stream/{conversation_id}`：SSE 对话。每一轮在这里判断意图、填槽位。
-- `POST /api/v1/chat/tools/{call_id}/result`：提交需求表单或确认结果，触发规划并以 SSE 返回行程。
-- `GET /api/v1/drafts/{conversation_id}`：读取会话当前的行程草稿。
-- `POST /api/v1/tasks`：提交结构化旅行需求并执行 Supervisor 规划。
-- `GET /api/v1/tasks/{task_id}`：查询任务状态。
-- `GET /api/v1/tasks/{task_id}/events`：读取持久化任务事件。
-- `POST /api/v1/approvals/{approval_id}/decision`：提交 `approve`、`edit` 或 `reject`。
-- `POST /api/v1/preferences/proposals`：提出长期偏好写入申请。
-- `POST /api/v1/itineraries/{conversation_id}/save`：提出正式行程保存/覆盖申请。
+- `POST /api/v1/chat/stream/{conversation_id}`：SSE 对话，每轮在这里判断意图、填槽位。
+- `POST /api/v1/chat/tools/{call_id}/result`：提交需求表单，触发规划并以 SSE 返回研究进度和行程。
+- `GET /api/v1/chat/history/{conversation_id}`：会话历史（含表单状态和行程结构化结果）。
+- `GET /api/v1/planning/drafts/{conversation_id}`：会话当前的行程草稿。
+- `POST /api/v1/planning/tasks`：直接提交结构化需求执行规划。
 
-## 测试
+## 数据来源与边界
 
-```powershell
-\.venv\Scripts\python.exe -m pytest -q
-```
+- **地点库**（`data/places/`）：北京、上海、广州、深圳、成都、重庆、杭州、南京、苏州、武汉 10 城约 1.2 万条景点、
+  餐厅、住宿，来自 [ChinaTravel](https://huggingface.co/datasets/LAMDA-NeSy/ChinaTravel-Sandbox) 静态快照。
+- **天气**：Open-Meteo（16 天，免费版仅限非商业用途），高德作备用。
+- **路程**：交通图谱（表 `travelroute`）→ 高德 → 坐标估算。
+- 没有可用数据源时明确说明查不到；不提供购票、预订、支付等交易功能。
 
-默认会跳过需要真实模型和网络的集成测试；设置 `RUN_EXTERNAL_TESTS=1` 后再运行这些测试。启动服务前先执行 `python scripts/init_db.py` 初始化业务表、Checkpointer、Store 和 pgvector 扩展。
+## 技术栈
+
+LangGraph 1.0 · LangChain 1.2 · FastAPI · PostgreSQL 17 + pgvector · Redis · ChromaDB · DeepSeek（OpenAI 兼容）·
+Ollama Embedding · SSE · React 18 · TypeScript · Tailwind CSS · Leaflet · Zustand

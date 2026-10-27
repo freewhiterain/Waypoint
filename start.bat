@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-title 知行旅行助手
+title WayPoint 旅行规划
 
 set "POSTGRES_CONTAINER=travel_postgres"
 set "POSTGRES_VOLUME=trip_postgres_data"
@@ -12,7 +12,7 @@ set "POSTGRES_PASSWORD=travel123456"
 set "REDIS_CONTAINER=travel_redis"
 set "REDIS_VOLUME=trip_redis_data"
 set "APP_URL=http://127.0.0.1:18000"
-set "DOCS_URL=http://localhost:18000/ui"
+set "DOCS_URL=http://localhost:18000/ui/"
 
 if not exist ".venv\Scripts\python.exe" (
     echo [错误] 未找到虚拟环境 .venv，请先创建虚拟环境并安装依赖。
@@ -27,27 +27,43 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/5] 检查 Docker Desktop...
+echo [1/6] 检查 Docker Desktop...
 call :ensure_docker
 if errorlevel 1 goto :failed
 
-echo [2/5] 启动 PostgreSQL...
+echo [2/6] 启动 PostgreSQL...
 call :ensure_postgres
 if errorlevel 1 goto :failed
 
-echo [3/5] 启动 Redis...
+echo [3/6] 启动 Redis...
 call :ensure_redis
 if errorlevel 1 goto :failed
 
-echo [4/5] 初始化数据库表、Checkpointer、Store 和 pgvector...
+echo [4/6] 初始化数据库表、Checkpointer、Store 和 pgvector...
 .venv\Scripts\python.exe scripts\init_db.py
 if errorlevel 1 (
     echo [错误] 数据库初始化失败，请查看上方日志。
     goto :failed
 )
 
-echo [5/5] 启动后端服务...
-echo       API 文档：%DOCS_URL%
+echo [5/6] 检查前端构建...
+if exist "web\dist\index.html" (
+    echo       前端已构建。
+) else (
+    where npm >nul 2>&1
+    if errorlevel 1 (
+        echo [警告] 未找到 npm，跳过前端构建；/ui 会显示构建提示。
+    ) else (
+        echo       首次运行，正在安装依赖并构建前端（约 1-3 分钟）...
+        pushd web
+        call npm install --no-audit --no-fund
+        call npm run build
+        popd
+    )
+)
+
+echo [6/6] 启动后端服务...
+echo       打开：%DOCS_URL%    API 文档：%APP_URL%/docs
 echo       按 Ctrl+C 可停止后端；数据库容器会继续运行。
 
 rem 在隐藏的 PowerShell 进程中等待健康检查通过，再打开浏览器。
