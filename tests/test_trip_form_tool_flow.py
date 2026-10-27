@@ -314,6 +314,7 @@ async def test_recommendation_keeps_call_pending_and_returns_rag_answer(monkeypa
     assert [event["type"] for event in events] == ["token", "tool_result", "done"]
     assert events[0]["content"] == "Kyoto works well for a four-day food-focused trip."
     assert events[1]["status"] == "awaiting_destination"
+    assert events[1]["payload"]["suggested_destinations"] == []
     assert repository.records["call-1"].status == "pending"
     assert repository.records["call-1"].partial_values == {"days": 4, "interests": "food"}
     assert queries and "food" in queries[0]

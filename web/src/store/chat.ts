@@ -37,6 +37,8 @@ export interface TripCall {
   askFields: (keyof TripValues)[];
   status: TripStatus;
   recommendation: string;
+  /** 推荐回答里提到的城市，卡片上给出"就去这里"的快捷选项。 */
+  suggestions: string[];
   error: string;
 }
 
@@ -120,6 +122,7 @@ function tripFromCall(callId: string, args: Record<string, any> | undefined): Tr
     askFields: TRIP_FIELDS.filter((field) => tripFieldError(field, values)),
     status: "pending",
     recommendation: "",
+    suggestions: [],
     error: "",
   };
 }
@@ -173,6 +176,7 @@ function rebuild(history: HistoryMessage[]): ChatMessage[] {
       } else if (trip && result.status === "awaiting_destination") {
         trip.values = { ...trip.values, ...stringify(result.partial_values || {}) };
         trip.recommendation = item.content;
+        trip.suggestions = result.suggested_destinations || [];
       }
     }
     if (chat?.trip) trips.set(chat.trip.callId, chat.trip);
@@ -414,7 +418,7 @@ export const useChat = create<State>((set, get) => {
       const trip = get().messages.find((m) => m.id === messageId)?.trip;
       if (!trip || get().busy) return;
       set({ busy: true });
-      patchTrip(messageId, { status: "recommending", recommendation: "", error: "" });
+      patchTrip(messageId, { status: "recommending", recommendation: "", suggestions: [], error: "" });
       const partial: Record<string, string> = {};
       for (const field of TRIP_FIELDS) if (values[field]?.trim() && field !== "destination") partial[field] = values[field];
       try {
@@ -426,6 +430,8 @@ export const useChat = create<State>((set, get) => {
               patchMessage(messageId, (m) =>
                 m.trip ? { ...m, trip: { ...m.trip, recommendation: m.trip.recommendation + (event.content || "") } } : m,
               );
+            } else if (event.type === "tool_result") {
+              patchTrip(messageId, { suggestions: event.payload?.suggested_destinations || [] });
             } else if (event.type === "error") {
               throw new Error(event.message || "推荐失败");
             }

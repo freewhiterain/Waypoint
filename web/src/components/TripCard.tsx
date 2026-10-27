@@ -184,6 +184,19 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
         {trip.recommendation && (
           <div className="rounded-xl border border-dashed border-sun-300 bg-sun-50/60 p-4 dark:border-sun-500/40 dark:bg-sun-500/5">
             <Markdown>{trip.recommendation}</Markdown>
+            {trip.suggestions.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {trip.suggestions.map((city) => (
+                  <button
+                    key={city}
+                    className={clsx("chip", values.destination === city && "chip-active")}
+                    onClick={() => setValues({ ...values, destination: city })}
+                  >
+                    <MapPin className="h-3.5 w-3.5" /> 就去{city}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
