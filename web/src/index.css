@@ -1,0 +1,119 @@
+@import "leaflet/dist/leaflet.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-[#f6f5f1] text-ink-900 antialiased dark:bg-ink-950 dark:text-ink-50;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    @apply bg-sun-200 text-ink-900;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-800 dark:bg-sun-500 dark:text-ink-950 dark:hover:bg-sun-400;
+  }
+  .btn-accent {
+    @apply btn bg-sun-500 text-white shadow-[0_8px_20px_-8px_rgba(251,97,16,0.7)] hover:bg-sun-600;
+  }
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-100 bg-white shadow-card dark:border-ink-800 dark:bg-ink-900;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm outline-none transition
+      placeholder:text-ink-300 focus:border-sun-400 focus:ring-4 focus:ring-sun-100
+      dark:border-ink-700 dark:bg-ink-900 dark:placeholder:text-ink-500 dark:focus:ring-sun-900/40;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 transition
+      hover:border-sun-400 hover:text-sun-700 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200 dark:hover:border-sun-500 dark:hover:text-sun-300;
+  }
+  .chip-active {
+    @apply border-sun-500 bg-sun-50 text-sun-700 dark:border-sun-500 dark:bg-sun-500/10 dark:text-sun-300;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(110, 127, 163, 0.35) transparent;
+  }
+  .skeleton {
+    @apply rounded-md bg-gradient-to-r from-ink-100 via-ink-50 to-ink-100 bg-[length:200%_100%] animate-shimmer dark:from-ink-800 dark:via-ink-700 dark:to-ink-800;
+  }
+}
+
+/* 回答里的 Markdown */
+.prose-wp {
+  @apply text-[15px] leading-7 text-ink-800 dark:text-ink-100;
+}
+.prose-wp > * + * {
+  @apply mt-3;
+}
+.prose-wp h1 {
+  @apply text-xl font-semibold;
+}
+.prose-wp h2 {
+  @apply mt-5 text-lg font-semibold;
+}
+.prose-wp h3 {
+  @apply mt-4 font-semibold;
+}
+.prose-wp ul {
+  @apply list-disc space-y-1 pl-5;
+}
+.prose-wp ol {
+  @apply list-decimal space-y-1 pl-5;
+}
+.prose-wp strong {
+  @apply font-semibold text-ink-900 dark:text-white;
+}
+.prose-wp a {
+  @apply text-sun-600 underline decoration-sun-300 underline-offset-2;
+}
+.prose-wp code {
+  @apply rounded bg-ink-100 px-1 py-0.5 text-[13px] dark:bg-ink-800;
+}
+.prose-wp table {
+  @apply w-full overflow-hidden rounded-xl border border-ink-100 text-sm dark:border-ink-800;
+}
+.prose-wp th {
+  @apply bg-ink-50 px-3 py-2 text-left font-medium text-ink-600 dark:bg-ink-800 dark:text-ink-200;
+}
+.prose-wp td {
+  @apply border-t border-ink-100 px-3 py-2 dark:border-ink-800;
+}
+
+.leaflet-container {
+  @apply h-full w-full rounded-2xl;
+  background: #e8edf3;
+  font-family: inherit;
+}
+.dark .leaflet-container {
+  background: #1f2840;
+}
+.dark .leaflet-tile {
+  filter: brightness(0.75) invert(1) contrast(0.9) hue-rotate(200deg) saturate(0.4);
+}
+.wp-marker {
+  @apply flex h-7 w-7 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-lg;
+}

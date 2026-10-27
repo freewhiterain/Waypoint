@@ -1,113 +1,72 @@
+"""前端（web/，React）与后端接口的契约：只做源码层面的静态检查，不需要 Node。"""
+
 from pathlib import Path
 
+WEB = Path(__file__).resolve().parents[1] / "web" / "src"
 
-HTML = Path("1_zhixing.html")
 
-
-def read_page() -> str:
-    return HTML.read_text(encoding="utf-8")
+def source(*parts: str) -> str:
+    return (WEB.joinpath(*parts)).read_text(encoding="utf-8")
 
 
 def test_trip_form_tool_call_and_submission_contract_is_present():
-    html = read_page()
+    store = source("store", "chat.ts")
 
-    assert 'parsed.type === "tool_call"' in html
-    assert "renderTripTool" in html
-    assert "submitTripToolResult" in html
-    assert "/api/v1/chat/tools/${callId}/result" in html
-    assert 'status: "recommend_destination"' in html
-    assert 'status: "completed"' in html
-    assert "parseSseStream" in html
-    submit_start = html.index("function submitTripToolResult")
-    submit_end = html.index("function restorePendingTool", submit_start)
-    assert "sendMessage();" not in html[submit_start:submit_end]
+    assert 'event.tool === "collect_trip_requirements"' in store
+    assert "/api/v1/chat/tools/${trip.callId}/result" in store
+    assert 'status: "completed"' in store
+    assert 'status: "recommend_destination"' in store
+    for field in ("destination", "departure_date", "days: Number(values.days)"):
+        assert field in store
 
 
-def test_trip_form_has_three_steps_and_required_controls():
-    html = read_page()
+def test_trip_form_only_asks_missing_slots_and_validates_them():
+    store = source("store", "chat.ts")
+    card = source("components", "TripCard.tsx")
 
-    assert "currentStep" in html
-    assert "${page + 1}/${total}" in html
-    assert 'name="destination"' in html
-    assert 'name="departure_date"' in html
-    assert 'name="days"' in html
-    assert 'type="date"' in html
-    assert 'min="${today}"' in html
-    assert "[2, 3, 5, 7]" in html
-    assert "min=\"1\"" in html
-    assert "max=\"30\"" in html
-    assert "closeTripTool" in html
-    assert "submitting" in html
+    assert "askFields: TRIP_FIELDS.filter((field) => tripFieldError(field, values))" in store
+    assert "出发日期不能早于今天" in store
+    assert "天数请填 1-30 的整数" in store
+    assert "还没想好，帮我推荐" in card
 
 
-def test_trip_form_is_a_numbered_question_card():
-    html = read_page()
+def test_history_restores_tool_state_and_plan():
+    store = source("store", "chat.ts")
 
-    # 每题一页：编号选项 + "其他"自由输入，点选项即作答，最后一题由发送按钮提交。
-    assert "chooseTripOption" in html
-    assert "advanceTripTool" in html
-    assert "trip-tool-index" in html
-    assert "trip-tool-other" in html
-    assert 'data-trip-action="back"' in html
-    assert 'data-trip-action="forward"' in html
-    assert "tripDateOptions" in html
-    assert '"__recommend__"' in html
-    # 填槽：只为缺失的槽位出题，卡片停靠在输入框位置。
-    assert "missingTripSteps" in html
-    assert "askSteps" in html
-    assert 'id = "tripDock"' in html
-    assert ".chat-input-area.trip-active .chat-input-wrapper" in html
-    # 三个槽位都齐时不自动提交：先显示"将为你规划：……"，用户确认后才开始规划。
-    receive_start = html.index("function receiveTripToolCall")
-    receive_end = html.index("function localIso", receive_start)
-    assert "submitTripToolResult" not in html[receive_start:receive_end]
-    assert "confirming: askSteps.length === 0" in html
-    confirm_start = html.index("function renderTripConfirm")
-    confirm_end = html.index("function editTripTool", confirm_start)
-    assert "将为你规划：" in html[confirm_start:confirm_end]
-    assert 'data-trip-action="confirm"' in html[confirm_start:confirm_end]
-    assert 'data-trip-action="edit"' in html[confirm_start:confirm_end]
-    assert 'submitTripToolResult(callId, "completed")' in html[confirm_start:confirm_end]
-    recommend_start = html.index("function chooseTripOption")
-    recommend_end = html.index("function advanceTripTool", recommend_start)
-    assert 'submitTripToolResult(callId, "recommend_destination")' in html[recommend_start:recommend_end]
+    assert 'toolCall?.tool === "collect_trip_requirements"' in store
+    assert 'result.status === "completed"' in store
+    assert 'result.status === "awaiting_destination"' in store
+    assert "extra.assistant_result?.itinerary" in store
 
 
-def test_history_renders_tool_state_and_old_ask_card_is_removed():
-    html = read_page()
+def test_composer_ignores_enter_while_ime_is_composing():
+    # 中文输入法选词时按回车只是确认候选，原先的页面会直接把半截拼音发出去。
+    chat = source("components", "ChatView.tsx")
 
-    assert "renderContent(msg.role, msg.content)" in html
-    assert "extra_info.tool_call" in html
-    assert "extra_info.tool_result" in html
-    assert "restorePendingTool" in html
-    assert "awaiting_destination" in html
-    assert "renderAskCard" not in html
+    assert "e.nativeEvent.isComposing" in chat
+    assert 'e.key === "Enter" && !e.shiftKey' in chat
 
 
-def test_frontend_renders_mock_rag_worker_status_and_sources():
-    html = read_page()
+def test_sse_reader_buffers_partial_frames():
+    client = source("api", "client.ts")
 
-    assert "worker-results" in html
-    assert "本地模拟资料" in html
-    assert "worker_completed" in html or "worker_results" in html
-    assert "parsed.payload?.result" in html
-    assert "assistant_result" in html
-    assert "result.evidence" in html
-    assert "result.warnings" in html
+    assert 'buffer.indexOf("\\n\\n")' in client
+    assert "decoder.decode(value, { stream: true })" in client
 
 
-def test_frontend_renders_agent_tool_and_deep_search_events():
-    html = read_page()
+def test_frontend_renders_research_events_and_react_tools():
+    store = source("store", "chat.ts")
+    item = source("components", "MessageItem.tsx")
 
-    assert "appendAgentToolResult" in html
-    assert "appendResearchEvent" in html
-    assert 'parsed.type === "tool_result"' in html
-    assert '"subagent_tool_call"' in html
-    assert '"research_conflict"' in html
-    assert "evidence_count" in html
+    assert '"subagent_started"' in store and '"subagent_completed"' in store
+    assert "evidence_count" in store
+    for tool in ("search_travel_knowledge", "research_topic", "estimate_travel_time"):
+        assert tool in store
+    assert "ResearchProgress" in item
 
 
 def test_fastapi_exposes_the_frontend_entrypoint():
     from app.main import app
 
-    assert any(route.path == "/ui" for route in app.routes)
+    paths = {getattr(route, "path", None) for route in app.routes}
+    assert "/ui" in paths

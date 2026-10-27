@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from app.agents.factory import create_planning_registry
 from app.config import settings
 from app.governance.drafts import PostgresDraftRepository
@@ -75,18 +76,35 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LangGraph 旅行规划系统",
-    description="企业级多 Agent 旅行规划服务",
+    title="WayPoint 旅行规划 API",
+    description="基于 LangGraph 的多 Agent 旅行规划服务",
     version="1.0.0",
     lifespan=lifespan
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 前端（web/，Vite + React）构建产物。没构建时 /ui 给出构建提示而不是 404。
+_WEB_DIST = _PROJECT_ROOT / "web" / "dist"
+_WEB_MISSING = """<!doctype html><meta charset="utf-8"><title>WayPoint</title>
+<body style="font-family:system-ui;padding:48px;max-width:640px;margin:auto;line-height:1.7">
+<h2>前端还没有构建</h2><p>在项目根目录执行：</p>
+<pre style="background:#f4f4f4;padding:12px;border-radius:8px">cd web
+npm install
+npm run build</pre>
+<p>开发时也可以 <code>npm run dev</code>，访问 http://localhost:5173/ui/ 。</p></body>"""
 
 
 @app.get("/ui", include_in_schema=False)
-async def ui():
-    return FileResponse(_PROJECT_ROOT / "1_zhixing.html")
+async def ui_redirect():
+    return RedirectResponse("/ui/")
+
+
+if (_WEB_DIST / "index.html").exists():
+    app.mount("/ui", StaticFiles(directory=_WEB_DIST, html=True), name="ui")
+else:
+    @app.get("/ui/", include_in_schema=False)
+    async def ui_missing():
+        return HTMLResponse(_WEB_MISSING)
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,11 +123,6 @@ app.include_router(tools.router, prefix="/api/v1")
 app.include_router(planning.router, prefix="/api/v1")
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def root():
-    return {
-        "status": "healthy",
-        "service": "LangGraph Travel Planner",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
+    return RedirectResponse("/ui/")

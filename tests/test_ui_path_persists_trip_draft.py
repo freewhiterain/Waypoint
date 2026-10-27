@@ -1,6 +1,6 @@
 """UI 走的工具结果链路必须持久化 TripDraft。
 
-前端只调 /api/v1/chat/tools/{call_id}/result（1_zhixing.html:1744），
+前端只调 /api/v1/chat/tools/{call_id}/result（web/src/store/chat.ts 的 submitTrip），
 而 save_trip_draft 此前只有 /api/v1/planning/tasks 会调用——那个端点
 UI 从不访问。结果是：
 

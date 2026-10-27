@@ -21,7 +21,7 @@ from app.schemas.tools import ToolResultRequest
 
 
 PROACTIVE_OFFER = "需要我帮你规划一下旅行吗？"
-HTML = Path(__file__).resolve().parents[1] / "1_zhixing.html"
+STORE = Path(__file__).resolve().parents[1] / "web" / "src" / "store" / "chat.ts"
 
 
 class Rows:
@@ -165,8 +165,6 @@ async def test_new_conversation_returns_and_frontend_renders_proactive_offer():
 
     assert response.initial_message.content == PROACTIVE_OFFER
     assert session.messages[0].extra_info == {"kind": "conversation_offer"}
-    html = HTML.read_text(encoding="utf-8")
-    assert "renderMessages([data.initial_message])" in html
 
 
 @pytest.mark.asyncio
@@ -408,9 +406,6 @@ async def test_history_refresh_contains_and_restores_pending_tool_state():
         "status": "awaiting_destination",
         "partial_values": {"days": 4},
     }
-    html = HTML.read_text(encoding="utf-8")
-    call_position = html.index("receiveTripToolCall(toolCall")
-    result_position = html.index("applyTripToolResult(", call_position)
-    restore_position = html.index("restorePendingTool();", result_position)
-    assert call_position < result_position < restore_position
-    assert 'tool.status !== "completed"' in html
+    store = STORE.read_text(encoding="utf-8")
+    assert 'toolCall?.tool === "collect_trip_requirements"' in store
+    assert 'result.status === "awaiting_destination"' in store

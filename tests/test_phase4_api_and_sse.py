@@ -80,13 +80,3 @@ def test_log_redaction_masks_common_credentials():
     assert "hello" not in value
     assert "jwt-value" not in value
     assert value.count("***") == 3
-
-
-def test_frontend_buffers_partial_sse_frames():
-    html_path = Path("1_zhixing.html")
-    if not html_path.exists():
-        pytest.skip("前端演示页面未包含在当前后端部署中")
-    html = html_path.read_text(encoding="utf-8")
-    assert "sseBuffer" in html
-    assert "split(/\\r?\\n\\r?\\n/)" in html
-    assert 'parsed.type === "token"' in html
