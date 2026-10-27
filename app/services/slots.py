@@ -40,6 +40,19 @@ _RELAXED_CUE = re.compile(r"轻松|少安排|少去|少排|别太累|不要太�
 _SELECTION_CUE = re.compile(r"第[一二三四五]个|前者|后者|这个|那个|这里|那里|就它|就这|就那|听你的")
 
 
+def _mentions_place(text: str, place: str) -> bool:
+    """用户原话里按顺序出现了地点名中至少 3 个字（短名字要全部出现）。"""
+    if place in text:
+        return True
+    previous = [0] * (len(place) + 1)
+    for char in text:
+        current = [0]
+        for index, target in enumerate(place, start=1):
+            current.append(previous[index - 1] + 1 if char == target else max(previous[index], current[-1]))
+        previous = current
+    return previous[-1] >= min(3, len(place))
+
+
 def _dedupe(items: list[str]) -> list[str]:
     cleaned = [item.strip() for item in items if isinstance(item, str) and 0 < len(item.strip()) <= 10]
     return list(dict.fromkeys(cleaned))[:_MAX_LIST_ITEMS]
@@ -118,9 +131,10 @@ def apply_slot_update(
         else:
             dropped.append("children")
 
-    # 不想去的地点必须是用户原话里出现过的名字，防止模型替用户排除地点。
+    # 不想去的地点必须是用户提到过的，防止模型替用户排除地点。模型常把"熊猫基地"
+    # 补全成上下文里的全名"成都大熊猫繁育研究基地"，所以按公共子序列判断而不是原样出现。
     avoid = [place.strip() for place in update.avoid_places if place.strip()]
-    kept_avoid = [place for place in avoid if place in user_text and len(place) <= 30]
+    kept_avoid = [place for place in avoid if len(place) <= 30 and _mentions_place(user_text, place)]
     if len(kept_avoid) < len(avoid):
         dropped.append("avoid_places")
     values["avoid_places"] = list(dict.fromkeys([*values.get("avoid_places", []), *kept_avoid]))[:_MAX_LIST_ITEMS]

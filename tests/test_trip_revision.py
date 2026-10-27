@@ -75,3 +75,15 @@ async def test_avoided_place_never_appears_and_relaxed_day_gets_one_stop():
     day_two = [slot for slot in itinerary[1].slots if slot.period in ("morning", "afternoon")]
     assert sum(slot.title != "自由活动" for slot in day_two) == 1
     assert "轻松" in next(slot.description for slot in day_two if slot.title == "自由活动")
+
+
+def test_full_place_name_completed_from_context_still_counts_as_mentioned():
+    slots, dropped = apply_slot_update(
+        PLANNED,
+        SlotUpdate(avoid_places=["成都大熊猫繁育研究基地", "都江堰景区"]),
+        user_text="把熊猫基地换成别的",
+        today=TODAY,
+    )
+
+    assert slots.avoid_places == ["成都大熊猫繁育研究基地"]
+    assert "avoid_places" in dropped
