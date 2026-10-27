@@ -91,14 +91,27 @@ def _candidates(results: list[WorkerResult], worker: str, requirement: TravelReq
 
 
 def _relaxed_hint(requirement: TravelRequirement) -> str:
+    if _wants_relaxed_trip(requirement):
+        return "用户希望整趟节奏轻松，每天只排 1 个景点，选路面平缓、不太累的。"
     days = [day for day in sorted(set(requirement.relaxed_days)) if day <= requirement.days]
     if not days:
         return ""
     return "用户要求" + "、".join(f"第{day}天" for day in days) + "轻松些，这几天只排 1 个景点，选不太累的。"
 
 
+# 用户说"别太累""带老人""慢节奏"但没指定哪天时，模型会把它记成风格标签而不是 relaxed_days。
+_RELAXED_STYLE_WORDS = ("轻松", "悠闲", "休闲", "慢", "不累", "别太累", "老人", "腿脚")
+
+
+def _wants_relaxed_trip(requirement: TravelRequirement) -> bool:
+    text = "".join([*requirement.styles, *requirement.special_needs])
+    return any(word in text for word in _RELAXED_STYLE_WORDS)
+
+
 def day_capacities(requirement: TravelRequirement) -> list[int]:
-    """每天最多几个景点：用户要求轻松的那几天只排 1 个。"""
+    """每天最多几个景点：用户要求轻松的那几天只排 1 个；整趟要轻松时每天都只排 1 个。"""
+    if _wants_relaxed_trip(requirement):
+        return [1] * requirement.days
     relaxed = set(requirement.relaxed_days)
     return [1 if day in relaxed else ATTRACTIONS_PER_DAY for day in range(1, requirement.days + 1)]
 
@@ -226,7 +239,8 @@ async def select_places_with_llm(
                 + "按用户偏好和人数取舍；天气显示下雨的日期，室内景点可用 preferred_day 指定到那天。"
                 "选一个落脚酒店（hotel_id），尽量靠近所选景点。顺序和分天由后续算法决定，不需要你排。"
                 "候选里的 position 是 [纬度, 经度]，可以用来判断远近：晚餐选在所选景点附近的，"
-                "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个。"
+                "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个；"
+                "同一处地方的不同叫法（如灵隐寺和灵隐飞来峰景区）只选一个。"
             ),
         },
         {
@@ -277,18 +291,51 @@ def select_places_by_rules(
     )
 
 
+_GENERIC_SUFFIXES = ("风景名胜区", "风景区", "旅游区", "景区", "公园", "博物院", "博物馆", "寺", "古镇")
+
+
+def _core_name(name: str, city: str = "") -> str:
+    """去掉括号、城市名前缀和"景区/寺/公园"这类通用后缀后的名字主干："灵隐寺" → "灵隐"。
+
+    城市名要去掉，否则"南京博物院"和"南京总统府"的主干都是"南京"，会被当成同一处。
+    """
+    core = name.split("(")[0].split("（")[0].strip()
+    if city and core.startswith(city):
+        core = core[len(city):]
+    for suffix in _GENERIC_SUFFIXES:
+        if core.endswith(suffix) and len(core) - len(suffix) >= 2:
+            return core[: -len(suffix)]
+    return core
+
+
+def same_place(first: str, second: str, city: str = "") -> bool:
+    """同一处地方的不同叫法：灵隐寺 / 灵隐飞来峰景区，故宫 / 故宫博物院。"""
+    if not first or not second:
+        return False
+    if first == second:
+        return True
+    a, b = _core_name(first, city), _core_name(second, city)
+    return len(a) >= 2 and len(b) >= 2 and (a in second or b in first)
+
+
 def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results: list[WorkerResult]) -> tuple[PlaceSelection, list[str]]:
-    """丢掉不存在或重复的 id、超出容量的景点和越界的 preferred_day。"""
+    """丢掉不存在或重复的 id（含同一处地方的不同叫法）、超出容量的景点和越界的 preferred_day。"""
     warnings: list[str] = []
     valid = {
         "attractions": {option.id for option in _candidates(results, "attractions", requirement)},
         "dinners": {option.id for option in _candidates(results, "food", requirement)},
     }
+    names = {option.id: option.name for worker in ("attractions", "food") for option in _options(results, worker)}
 
     def clean(items: list[SelectedPlace], kind: str, limit: int) -> list[SelectedPlace]:
         kept: list[SelectedPlace] = []
         for item in items:
-            if item.id not in valid[kind] or any(existing.id == item.id for existing in kept):
+            duplicate = any(
+                existing.id == item.id
+                or same_place(names.get(existing.id, ""), names.get(item.id, ""), requirement.destination)
+                for existing in kept
+            )
+            if item.id not in valid[kind] or duplicate:
                 warnings.append(f"itinerary_selection_dropped:{kind}")
                 continue
             if item.preferred_day is not None and item.preferred_day > requirement.days:
@@ -365,6 +412,8 @@ def top_up_days(
     hotel_id: str | None,
     costs: TravelCosts,
     capacities: list[int] | None = None,
+    names: dict[str, str] | None = None,
+    city: str = "",
 ) -> list[list[str]]:
     """选点不够时，从没选中的候选里给空时段补一个顺路的景点。
 
@@ -375,12 +424,17 @@ def top_up_days(
     """
     capacities = capacities or [ATTRACTIONS_PER_DAY] * len(day_plans)
     used = {place_id for day in day_plans for place_id in day}
+    used_names = [names[place_id] for place_id in used if place_id in names] if names else []
     filled: list[list[str]] = []
     for day_places, capacity in zip(day_plans, capacities):
         day_places = list(day_places)
         while len(day_places) < capacity:
             anchor = day_places[-1] if day_places else hotel_id
-            pool = [place_id for place_id in candidate_ids if place_id not in used]
+            pool = [
+                place_id
+                for place_id in candidate_ids
+                if place_id not in used and not any(same_place(names.get(place_id, ""), name, city) for name in used_names)
+            ] if names else [place_id for place_id in candidate_ids if place_id not in used]
             if not pool:
                 break
             nearest = min(pool, key=lambda place_id: (costs.cost(anchor, place_id), pool.index(place_id)))
@@ -388,6 +442,8 @@ def top_up_days(
                 break
             day_places.append(nearest)
             used.add(nearest)
+            if names and nearest in names:
+                used_names.append(names[nearest])
         filled.append(_best_order(day_places, hotel_id, costs))
     return filled
 
@@ -443,6 +499,8 @@ def build_itinerary(
         selection.hotel_id,
         costs,
         capacities,
+        {option.id: option.name for option in _options(results, "attractions")},
+        requirement.destination,
     )
     dinner_pool = [item.id for item in selection.dinners]
     backup_dinners = [option.id for option in _candidates(results, "food", requirement) if option.id not in dinner_pool]

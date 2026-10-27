@@ -304,3 +304,43 @@ async def test_the_same_restaurant_is_not_repeated_on_later_evenings():
     evenings = [day.slots[-1] for day in itinerary]
     assert evenings[0].title == "火锅"
     assert evenings[1].title == "自由安排晚餐" and "已经安排过" in evenings[1].description
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        ("灵隐寺", "灵隐飞来峰景区", True),
+        ("故宫", "故宫博物院", True),
+        ("南京博物院", "南京总统府", False),  # 主干只剩城市名时不算同一处
+        ("成都博物馆", "成都大熊猫繁育研究基地", False),
+        ("武侯祠", "锦里", False),
+    ],
+)
+def test_same_place_recognises_different_names_for_one_spot(first, second, expected):
+    from app.agents.itinerary_planner import same_place
+
+    city = "南京" if first.startswith("南京") else "成都" if first.startswith("成都") else "杭州"
+    assert same_place(first, second, city) is expected
+
+
+@pytest.mark.asyncio
+async def test_two_names_for_one_spot_are_not_both_scheduled():
+    results = chengdu_results(LEGS)
+    results[0].options.append(option("武侯祠博物馆", "attractions"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="武侯祠博物馆"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    assert "武侯祠" in titles and "武侯祠博物馆" not in titles
+
+
+def test_a_relaxed_pace_style_makes_every_day_light():
+    from app.agents.itinerary_planner import day_capacities
+
+    assert day_capacities(requirement(days=3, styles=["适合老人", "节奏轻松"])) == [1, 1, 1]
+    assert day_capacities(requirement(days=2, styles=["美食"])) == [2, 2]
