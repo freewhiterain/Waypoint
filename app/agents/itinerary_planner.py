@@ -445,6 +445,7 @@ def build_itinerary(
         capacities,
     )
     dinner_pool = [item.id for item in selection.dinners]
+    backup_dinners = [option.id for option in _candidates(results, "food", requirement) if option.id not in dinner_pool]
     used_dinners: set[str] = set()
     # 午餐从没被选作晚餐的餐饮候选里就近挑，不交给 LLM：它只关心"离上午景点近、中午开门"。
     lunch_pool = (
@@ -486,12 +487,16 @@ def build_itinerary(
                 slots.append(TimeSlot(period="afternoon", title="自由活动",
                                       description="附近没有能顺路安排的景点，下午留给休息或在周边随意逛逛。"))
 
-        dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs)
+        # 选中的晚餐用完了就从其余餐饮候选里就近补，不再让同一家餐厅连吃几晚。
+        dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs) or _pick_dinner(
+            backup_dinners, used_dinners, previous, costs
+        )
         if dinner_id is not None:
             used_dinners.add(dinner_id)
             slots.append(_slot("evening", options[dinner_id], costs.minutes(previous, dinner_id)))
         else:
-            slots.append(TimeSlot(period="evening", title="自由安排晚餐", description="没有带证据的餐饮候选可安排。"))
+            reason = "能查到的餐厅前几晚已经安排过，这晚可以自由选择。" if used_dinners else "没有带证据的餐饮候选可安排。"
+            slots.append(TimeSlot(period="evening", title="自由安排晚餐", description=reason))
 
         notes = [] if place_ids else [f"第{index + 1}天已无未使用的景点候选。"]
         itinerary.append(
@@ -531,8 +536,9 @@ def _assign_periods(places: list[CandidateOption]) -> dict[str, CandidateOption]
 def _pick_dinner(pool: list[str], used: set[str], previous: str | None, costs: TravelCosts) -> str | None:
     if not pool:
         return None
-    unused = [dinner for dinner in pool if dinner not in used]
-    candidates = unused or pool
+    candidates = [dinner for dinner in pool if dinner not in used]
+    if not candidates:
+        return None
     return min(candidates, key=lambda dinner: (costs.cost(previous, dinner), candidates.index(dinner)))
 
 

@@ -287,3 +287,20 @@ async def test_origin_city_is_mentioned_on_the_first_and_last_day_without_invent
     assert any("返回上海" in note for note in itinerary[-1].notes)
     transport = " ".join(note for day in itinerary for note in day.notes if note.startswith("交通："))
     assert not re.search(r"\d{1,2}:\d{2}|[GDKZT]\d{2,4}", transport)  # 不编车次和发车时间
+
+
+@pytest.mark.asyncio
+async def test_the_same_restaurant_is_not_repeated_on_later_evenings():
+    results = chengdu_results(LEGS)
+    results[1].options = results[1].options[:1]  # 只有一家餐厅
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里"), SelectedPlace(id="宽窄巷子")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    evenings = [day.slots[-1] for day in itinerary]
+    assert evenings[0].title == "火锅"
+    assert evenings[1].title == "自由安排晚餐" and "已经安排过" in evenings[1].description
