@@ -133,7 +133,7 @@ function tripFromCall(callId: string, args: Record<string, any> | undefined): Tr
   };
 }
 
-const REACT_TOOLS = new Set(["search_travel_knowledge", "research_topic", "estimate_travel_time", "estimate_trip_cost"]);
+const REACT_TOOLS = new Set(["search_travel_knowledge", "research_topic", "estimate_travel_time", "estimate_trip_cost", "recommend_cities"]);
 
 /** 把一条历史消息还原成界面消息；返回 null 表示这条不单独显示。 */
 function fromHistory(message: HistoryMessage): ChatMessage | null {

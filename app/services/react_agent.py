@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -84,6 +85,13 @@ class TripCostArgs(BaseModel):
     destination: str = Field(description="城市名")
     days: int = Field(description="游玩天数", ge=1, le=30)
     people: int = Field(default=1, description="出行人数", ge=1, le=30)
+
+
+class RecommendCitiesArgs(BaseModel):
+    days: int | None = Field(default=None, description="打算玩几天，用户没说就不填", ge=1, le=30)
+    departure_date: str | None = Field(default=None, description="出发日期 YYYY-MM-DD 或月份，用户没说就不填")
+    interests: list[str] = Field(default_factory=list, description="兴趣，如 美食、亲子、海边、历史")
+    children: int | None = Field(default=None, description="同行儿童人数")
 
 
 class TravelTimeArgs(BaseModel):
@@ -195,6 +203,25 @@ async def _estimate_trip_cost(destination: str, days: int, people: int = 1) -> T
     return ToolOutcome(text="\n".join(lines), evidence_count=len(attractions) + len(meals) + len(hotels))
 
 
+async def _recommend_cities(
+    days: int | None = None,
+    departure_date: str | None = None,
+    interests: list[str] | None = None,
+    children: int | None = None,
+) -> ToolOutcome:
+    """在地点库覆盖的城市里按条件挑 2~3 个；和规划表单里的"帮我推荐"是同一套逻辑。"""
+    from app.services.destination_recommender import recommend_destinations
+
+    partial = {key: value for key, value in {"days": days, "departure_date": departure_date}.items() if value}
+    context = {key: value for key, value in {"styles": interests or [], "children": children}.items() if value}
+    result = await recommend_destinations(partial, context)
+    return ToolOutcome(
+        text=result.answer,
+        status="completed" if result.cities else "empty",
+        evidence_count=len(result.cities),
+    )
+
+
 def build_react_tools(registry: Any | None = None) -> list[StructuredTool]:
     """线路 1 可用的只读工具。registry 只在测试里替换子 Agent 注册表时传。"""
     return [
@@ -209,6 +236,13 @@ def build_react_tools(registry: Any | None = None) -> list[StructuredTool]:
             name="research_topic",
             description="对某个城市的某一方面做专项研究（景点/天气/交通/住宿/美食）。需要实时信息（如天气）或更详细的资料时用它。",
             args_schema=ResearchTopicArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=_recommend_cities,
+            name="recommend_cities",
+            description="用户还没定去哪、想要推荐几个城市时用它：在有完整地点数据的城市里按天数、季节、同行人和兴趣挑 2~3 个，"
+            "并附上每个城市的热门景点。",
+            args_schema=RecommendCitiesArgs,
         ),
         StructuredTool.from_function(
             coroutine=_estimate_trip_cost,
@@ -233,6 +267,7 @@ def _system_prompt(slots: TripSlots) -> str:
     return "\n".join(
         [
             "你是旅行助手，负责回答旅行相关的问题、推荐目的地、帮用户了解某个地方。",
+            f"今天是 {date.today().isoformat()}（周{'一二三四五六日'[date.today().weekday()]}），涉及日期时以此推算。",
             "你可以调用工具查资料。先想清楚需要什么信息，再决定调用哪个工具；一次可以调用多个。",
             "规则：",
             "1. 事实只能来自工具返回的内容和用户自己说过的话。工具没有查到的，直接告诉用户没有查到，"

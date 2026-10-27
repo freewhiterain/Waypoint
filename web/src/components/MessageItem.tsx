@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle2,
   CloudSun,
+  Compass,
   Loader2,
   MapPinned,
   Navigation,
@@ -34,6 +35,7 @@ function activityLabel(activity: Activity): { icon: typeof Search; text: string 
   const args = activity.arguments || {};
   if (activity.tool === "search_travel_knowledge") return { icon: BookOpen, text: `查资料：${args.query || ""}` };
   if (activity.tool === "estimate_travel_time") return { icon: Navigation, text: `估算路程：${args.destination || ""}` };
+  if (activity.tool === "recommend_cities") return { icon: Compass, text: "挑选适合的城市" };
   if (activity.tool === "estimate_trip_cost")
     return { icon: Wallet, text: `估算费用：${args.destination || ""} ${args.days || ""} 天` };
   const topic = (args.topic || activity.tool.replace("research_", "")) as WorkerName;

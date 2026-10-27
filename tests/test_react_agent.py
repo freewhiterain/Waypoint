@@ -176,7 +176,9 @@ async def test_stops_after_the_round_limit_and_forces_a_final_answer():
 async def test_real_tools_are_registered_with_argument_schemas():
     tools = {item.name: item for item in react_agent.build_react_tools()}
 
-    assert set(tools) == {"search_travel_knowledge", "research_topic", "estimate_travel_time", "estimate_trip_cost"}
+    assert set(tools) == {
+        "search_travel_knowledge", "research_topic", "estimate_travel_time", "estimate_trip_cost", "recommend_cities"
+    }
     assert set(tools["research_topic"].args_schema.model_fields) == {"destination", "topic", "question", "deep"}
 
 
@@ -363,3 +365,31 @@ async def test_trip_cost_is_estimated_from_catalog_prices_and_unknown_cities_say
 
     assert covered.status == "completed" and "合计约" in covered.text and "2 晚" in covered.text
     assert uncovered.status == "empty" and "无法估算" in uncovered.text
+
+
+@pytest.mark.asyncio
+async def test_recommend_cities_tool_passes_conditions_to_the_shared_recommender(monkeypatch):
+    from app.services import destination_recommender
+    from app.services.react_agent import _recommend_cities
+
+    seen = {}
+
+    async def fake(partial, context=None):
+        seen.update(partial=partial, context=context)
+        return destination_recommender.DestinationRecommendation(answer="推荐上海", cities=["上海"])
+
+    monkeypatch.setattr(destination_recommender, "recommend_destinations", fake)
+
+    outcome = await _recommend_cities(days=2, interests=["亲子"], children=1)
+
+    assert outcome.text == "推荐上海" and outcome.status == "completed"
+    assert seen == {"partial": {"days": 2}, "context": {"styles": ["亲子"], "children": 1}}
+
+
+def test_system_prompt_tells_the_model_today_s_date():
+    from datetime import date
+
+    from app.schemas.slots import TripSlots
+    from app.services.react_agent import _system_prompt
+
+    assert date.today().isoformat() in _system_prompt(TripSlots())
