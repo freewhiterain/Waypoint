@@ -35,6 +35,8 @@ from app.schemas.planning import (
 from app.utils.logger import app_logger
 
 MAX_ROUNDS = 3
+# 强制工具调用下模型偶尔返回空结果（解析为 None），先重试，仍失败才退回规则选点。
+SELECTION_ATTEMPTS = 2
 ATTRACTIONS_PER_DAY = 2
 MAX_DAILY_TRAVEL_MINUTES = 180
 # 同一天两个景点之间最多能接受的路程（分钟）。
@@ -207,8 +209,15 @@ async def select_places_with_llm(
             ),
         },
     ]
-    response = await llm.with_structured_output(PlaceSelection).ainvoke(messages)
-    return PlaceSelection.model_validate(response)
+    structured = llm.with_structured_output(PlaceSelection)
+    last_error: Exception | None = None
+    for attempt in range(SELECTION_ATTEMPTS):
+        try:
+            return PlaceSelection.model_validate(await structured.ainvoke(messages))
+        except Exception as exc:
+            last_error = exc
+            app_logger.warning(f"LLM 选点第 {attempt + 1} 次未返回有效结果: {type(exc).__name__}")
+    raise last_error  # type: ignore[misc]
 
 
 def _keyword_score(option: CandidateOption, requirement: TravelRequirement) -> int:
@@ -296,6 +305,20 @@ def assign_days(
                 break
             day_places.append(nearest)
             remaining.remove(nearest)
+
+    # 贪心到最后一天时，被"太远"挡下的景点没有后面的日子可去，原先会被悄悄丢掉，
+    # 行程里却出现"没有第二个景点候选"的空时段。这里把它们补进还有空位、
+    # 增加路程最少的那一天；真的太远时由约束检查报出来，交给 LLM 重选。
+    for place_id in list(remaining):
+        open_days = [day_places for day_places in plan if len(day_places) < ATTRACTIONS_PER_DAY]
+        if not open_days:
+            break
+        target = min(
+            open_days,
+            key=lambda day_places: costs.cost(day_places[-1] if day_places else hotel_id, place_id),
+        )
+        target.append(place_id)
+        remaining.remove(place_id)
 
     return [_best_order(day_places, hotel_id, costs) for day_places in plan]
 

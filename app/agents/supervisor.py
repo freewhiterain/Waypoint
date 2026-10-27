@@ -200,7 +200,8 @@ async def synthesize_itinerary_with_llm(
                         "缺乏依据的时段保持通用描述并注明需实时确认。"
                         "保持天数、日期和 morning/afternoon/evening 三时段结构与模板一致。"
                         "模板中每个时段的地点和先后顺序已按交通耗时排好，不得更换或调换，标题保留地点名称；"
-                        "travel_minutes 是从上一站过来的真实交通耗时，可写进描述，为空的不要自己估算。"
+                        "travel_minutes 是真实交通耗时：每天第一个时段是从住处出发，其余时段是从同一天"
+                        "前一个时段的地点过来，可写进描述，为空的不要自己估算。"
                     ),
                 },
                 {
@@ -215,13 +216,27 @@ async def synthesize_itinerary_with_llm(
             ]
         )
         if len(response.days) == len(template):
-            # 每天的备注（如当天天气）在规划阶段已确定，不交给模型改写。
-            return [day.model_copy(update={"notes": source.notes}) for day, source in zip(response.days, template)]
+            return [_merge_day(day, source) for day, source in zip(response.days, template)]
         app_logger.warning("LLM 综合返回的天数与模板不一致，退回模板行程")
         return template
     except Exception:
         app_logger.warning("LLM itinerary synthesis failed; using deterministic template: llm_synthesis_failed")
         return template
+
+
+def _merge_day(written: ItineraryDay, template: ItineraryDay) -> ItineraryDay:
+    """模型只负责改写描述：地点、时段、耗时、营业时间、价格和当天备注一律以模板为准。
+
+    原先直接采用模型返回的整天，模型改了标题或换了时段时，行程里就会出现
+    算法没排过的地点，或者把排好的交通耗时写错。时段对不上的那一天整体用模板。
+    """
+    if [slot.period for slot in written.slots] != [slot.period for slot in template.slots]:
+        return template
+    slots = [
+        source.model_copy(update={"description": slot.description or source.description})
+        for slot, source in zip(written.slots, template.slots)
+    ]
+    return template.model_copy(update={"slots": slots})
 
 
 def assemble_draft(

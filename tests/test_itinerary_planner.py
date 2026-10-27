@@ -177,3 +177,34 @@ def test_api_evidence_sharing_one_doc_url_is_not_collapsed_into_one():
 
     assert len({EvidenceGovernanceService._dedupe_key(item) for item in days}) == 2
     assert len({EvidenceGovernanceService._dedupe_key(item) for item in pages}) == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_llm_selection_is_retried_before_falling_back_to_rules():
+    # 强制工具调用下 DeepSeek 偶尔返回空结果，langchain 解析成 None。
+    llm = FakeLLM([None, PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, warnings = await plan_itinerary(requirement(days=1), chengdu_results(LEGS), llm=llm)
+
+    assert [slot.title for slot in itinerary[0].slots] == ["武侯祠", "锦里", "火锅"]
+    assert "itinerary_selection_fallback:llm_failed" not in warnings
+
+
+def test_selected_place_blocked_as_too_far_on_the_last_day_is_not_dropped():
+    # 熊猫基地离其余景点都超过 MAX_HOP_MINUTES：贪心会让它独占一天，
+    # 剩下的景点不能因为"最后一天没位置"被丢掉。
+    legs = [
+        leg("武侯酒店", "武侯祠", 5), leg("武侯酒店", "锦里", 10), leg("武侯祠", "锦里", 8),
+        leg("武侯酒店", "熊猫基地", 50), leg("熊猫基地", "武侯祠", 90), leg("熊猫基地", "锦里", 90),
+        leg("武侯酒店", "宽窄巷子", 25), leg("宽窄巷子", "武侯祠", 20), leg("宽窄巷子", "锦里", 22),
+        leg("熊猫基地", "宽窄巷子", 80),
+    ]
+    costs = TravelCosts(chengdu_results(legs))
+
+    days = assign_days(["武侯祠", "锦里", "熊猫基地", "宽窄巷子"], {}, 2, "武侯酒店", costs)
+
+    assert sorted(place for day in days for place in day) == ["宽窄巷子", "武侯祠", "熊猫基地", "锦里"]
