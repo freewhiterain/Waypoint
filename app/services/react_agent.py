@@ -80,6 +80,12 @@ class ResearchTopicArgs(BaseModel):
     deep: bool = Field(default=False, description="用户要求深入、仔细研究时为 true")
 
 
+class TripCostArgs(BaseModel):
+    destination: str = Field(description="城市名")
+    days: int = Field(description="游玩天数", ge=1, le=30)
+    people: int = Field(default=1, description="出行人数", ge=1, le=30)
+
+
 class TravelTimeArgs(BaseModel):
     destination: str = Field(description="城市名")
     places: list[str] = Field(description="要比较的地点名称，至少两个", min_length=2, max_length=6)
@@ -146,6 +152,49 @@ async def _estimate_travel_time(destination: str, places: list[str]) -> ToolOutc
     )
 
 
+def _percentile(values: list[float], ratio: float) -> float:
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(len(ordered) * ratio))]
+
+
+async def _estimate_trip_cost(destination: str, days: int, people: int = 1) -> ToolOutcome:
+    """按地点库的门票、人均和房价做区间估算，不经过模型、不编数字。
+
+    门票：最热门的景点里每天两个；餐饮：日常价位餐厅每天两顿；住宿：热门酒店按晚、两人一间。
+    区间取 25~75 分位。
+    """
+    from app.places.catalog import get_place_catalog, _price_cap, _NOT_A_MEAL
+
+    catalog = get_place_catalog()
+    attractions = [r.price for r in catalog.places(destination, "attractions")[:20] if r.price is not None]
+    restaurants = catalog.places(destination, "food")
+    cap = _price_cap(restaurants)
+    meals = [
+        r.price for r in restaurants if r.price and r.type not in _NOT_A_MEAL and (cap is None or r.price <= cap)
+    ]
+    hotels = [r.price for r in catalog.places(destination, "hotel")[:20] if r.price]
+    if not (attractions and meals and hotels):
+        return ToolOutcome(text=f"地点库没有覆盖{destination}的价格数据，无法估算费用。", status="empty")
+
+    nights, rooms = max(days - 1, 0), (people + 1) // 2
+
+    def band(values: list[float], times: float) -> tuple[int, int]:
+        return round(_percentile(values, 0.25) * times), round(_percentile(values, 0.75) * times)
+
+    ticket = band(attractions, 2 * days * people)
+    meal = band(meals, 2 * days * people)
+    hotel = band(hotels, nights * rooms)
+    total = (ticket[0] + meal[0] + hotel[0], ticket[1] + meal[1] + hotel[1])
+    lines = [
+        f"{destination}{days}天、{people}人的费用估算（地点库价格快照，区间为 25~75 分位）：",
+        f"- 门票：每天 2 个热门景点，约 {ticket[0]}~{ticket[1]} 元",
+        f"- 餐饮：每天 2 顿日常价位正餐，约 {meal[0]}~{meal[1]} 元",
+        f"- 住宿：{nights} 晚、{rooms} 间热门酒店，约 {hotel[0]}~{hotel[1]} 元",
+        f"- 合计约 {total[0]}~{total[1]} 元，不含城际交通、市内打车和购物。",
+    ]
+    return ToolOutcome(text="\n".join(lines), evidence_count=len(attractions) + len(meals) + len(hotels))
+
+
 def build_react_tools(registry: Any | None = None) -> list[StructuredTool]:
     """线路 1 可用的只读工具。registry 只在测试里替换子 Agent 注册表时传。"""
     return [
@@ -160,6 +209,12 @@ def build_react_tools(registry: Any | None = None) -> list[StructuredTool]:
             name="research_topic",
             description="对某个城市的某一方面做专项研究（景点/天气/交通/住宿/美食）。需要实时信息（如天气）或更详细的资料时用它。",
             args_schema=ResearchTopicArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=_estimate_trip_cost,
+            name="estimate_trip_cost",
+            description="按地点库里的门票、餐厅人均和酒店价格估算一趟旅行大概花多少钱。用户问预算、要花多少钱时用它。",
+            args_schema=TripCostArgs,
         ),
         StructuredTool.from_function(
             coroutine=_estimate_travel_time,

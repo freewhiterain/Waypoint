@@ -140,6 +140,13 @@ def scenarios() -> list[Scenario]:
             must_contain=["成都"],
         ),
         Scenario(
+            name="budget_question",
+            turns=["成都玩三天两个人大概要花多少钱"],
+            expect_route="token",
+            must_contain=["元"],
+            must_not_contain=["没有任何具体价格"],
+        ),
+        Scenario(
             name="recommend_destination",
             turns=["国庆不知道去哪玩，推荐几个城市"],
             expect_route="token",
@@ -230,7 +237,14 @@ def plan_quality_failures(output: str) -> list[str]:
 
 
 def _text_of(events: list[dict[str, Any]]) -> str:
-    return "".join(e.get("content", "") for e in events if e.get("type") == "token")
+    """按前端的方式拼回答：token 追加，token_reset 清空已显示的内容。"""
+    text = ""
+    for event in events:
+        if event.get("type") == "token":
+            text += event.get("content", "")
+        elif event.get("type") == "token_reset":
+            text = ""
+    return text
 
 
 def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[str, Any]:

@@ -176,7 +176,7 @@ async def test_stops_after_the_round_limit_and_forces_a_final_answer():
 async def test_real_tools_are_registered_with_argument_schemas():
     tools = {item.name: item for item in react_agent.build_react_tools()}
 
-    assert set(tools) == {"search_travel_knowledge", "research_topic", "estimate_travel_time"}
+    assert set(tools) == {"search_travel_knowledge", "research_topic", "estimate_travel_time", "estimate_trip_cost"}
     assert set(tools["research_topic"].args_schema.model_fields) == {"destination", "topic", "question", "deep"}
 
 
@@ -352,3 +352,14 @@ async def test_streamed_answer_is_not_sent_twice(monkeypatch):
     assert tokens == ["成都", "的火锅很有名。"]
     assert events[-1]["type"] == "done"
     assert session.saved_messages[-1].content == "成都的火锅很有名。"
+
+
+@pytest.mark.asyncio
+async def test_trip_cost_is_estimated_from_catalog_prices_and_unknown_cities_say_so():
+    from app.services.react_agent import _estimate_trip_cost
+
+    covered = await _estimate_trip_cost("成都", 3, 2)
+    uncovered = await _estimate_trip_cost("漠河", 2, 1)
+
+    assert covered.status == "completed" and "合计约" in covered.text and "2 晚" in covered.text
+    assert uncovered.status == "empty" and "无法估算" in uncovered.text
