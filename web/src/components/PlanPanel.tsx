@@ -1,6 +1,19 @@
 import { lazy, Suspense, useState } from "react";
 import clsx from "clsx";
-import { BedDouble, Car, Clock, Copy, Database, Map as MapIcon, ListOrdered, Ticket, Wallet, X } from "lucide-react";
+import {
+  BedDouble,
+  Car,
+  Clock,
+  Copy,
+  Database,
+  Feather,
+  ListOrdered,
+  Map as MapIcon,
+  RefreshCw,
+  Ticket,
+  Wallet,
+  X,
+} from "lucide-react";
 import type { TimeSlot, TravelPlanDraft, WorkerName } from "@/api/types";
 import { useChat } from "@/store/chat";
 import { DAY_COLORS } from "@/lib/places";
@@ -18,10 +31,12 @@ const PERIOD_STYLES = {
   evening: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
 };
 
-function Slot({ slot, first }: { slot: TimeSlot; first: boolean }) {
+const isFree = (slot: TimeSlot) => slot.title.endsWith("自由活动") || slot.title.startsWith("自由安排");
+
+function Slot({ slot, first, onReplace }: { slot: TimeSlot; first: boolean; onReplace?: () => void }) {
   const cost = money(slot.estimated_cost);
   return (
-    <li className="relative pl-6">
+    <li className="group relative pl-6">
       <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-ink-300 ring-2 ring-ink-100 dark:border-ink-900 dark:ring-ink-800" />
       {slot.travel_minutes != null && (
         <p className="mb-1.5 flex items-center gap-1 text-xs text-ink-400">
@@ -32,8 +47,19 @@ function Slot({ slot, first }: { slot: TimeSlot; first: boolean }) {
         <span className={clsx("mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium", PERIOD_STYLES[slot.period])}>
           {PERIOD_LABELS[slot.period]}
         </span>
-        <div className="min-w-0">
-          <p className="font-medium leading-6">{slot.title}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-medium leading-6">{slot.title}</p>
+            {onReplace && !isFree(slot) && (
+              <button
+                onClick={onReplace}
+                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-ink-400 opacity-100 transition hover:bg-sun-50 hover:text-sun-700 sm:opacity-0 sm:group-hover:opacity-100 dark:hover:bg-sun-500/10"
+                title="不想去这里，换一个重新规划"
+              >
+                <RefreshCw className="h-3 w-3" /> 换掉
+              </button>
+            )}
+          </div>
           <p className="mt-0.5 text-sm leading-6 text-ink-500 dark:text-ink-300">{slot.description}</p>
           {(slot.opening_window || cost) && (
             <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-ink-400">
@@ -88,7 +114,15 @@ function CostCard({ plan }: { plan: TravelPlanDraft }) {
   );
 }
 
-function Timeline({ plan, onFocus }: { plan: TravelPlanDraft; onFocus: (day: number) => void }) {
+function Timeline({
+  plan,
+  onFocus,
+  onRevise,
+}: {
+  plan: TravelPlanDraft;
+  onFocus: (day: number) => void;
+  onRevise?: (request: string) => void;
+}) {
   const hotel = splitNotes(plan.itinerary[0]?.notes || []).hotel;
   return (
     <div className="space-y-4">
@@ -128,9 +162,25 @@ function Timeline({ plan, onFocus }: { plan: TravelPlanDraft; onFocus: (day: num
             </button>
             <ol className="space-y-5 border-l-0 px-4 py-4">
               {day.slots.map((slot, index) => (
-                <Slot key={`${slot.period}-${slot.title}`} slot={slot} first={index === 0} />
+                <Slot
+                  key={`${slot.period}-${slot.title}`}
+                  slot={slot}
+                  first={index === 0}
+                  onReplace={onRevise && (() => onRevise(`把${slot.title}换成别的`))}
+                />
               ))}
             </ol>
+            {onRevise &&
+              day.slots.filter((slot) => (slot.period === "morning" || slot.period === "afternoon") && !isFree(slot)).length > 1 && (
+                <div className="border-t border-ink-100 px-4 py-2 dark:border-ink-800">
+                  <button
+                    onClick={() => onRevise(`第${day.day}天轻松一点，少安排一个景点`)}
+                    className="flex items-center gap-1 text-xs text-ink-400 hover:text-sun-600"
+                  >
+                    <Feather className="h-3.5 w-3.5" /> 这天轻松点
+                  </button>
+                </div>
+              )}
             {other.length > 0 && <p className="border-t border-ink-100 px-4 py-2.5 text-xs text-ink-400 dark:border-ink-800">{other.join(" ")}</p>}
           </section>
         );
@@ -197,7 +247,13 @@ function toMarkdown(plan: TravelPlanDraft): string {
 }
 
 export function PlanPanel({ plan, onClose }: { plan: TravelPlanDraft; onClose: () => void }) {
-  const notify = useChat((s) => s.notify);
+  const { notify, send, busy } = useChat();
+  // 一键修改：替用户发出修改请求，走对话理解 → 记下约束 → 确认后重新规划。
+  const revise = (request: string) => {
+    if (busy) return;
+    send(request);
+    if (window.innerWidth < 1280) onClose();
+  };
   const [tab, setTab] = useState<Tab>("timeline");
   const [focusDay, setFocusDay] = useState<number | null>(null);
   const req = plan.requirement;
@@ -259,6 +315,7 @@ export function PlanPanel({ plan, onClose }: { plan: TravelPlanDraft; onClose: (
         {tab === "timeline" && (
           <Timeline
             plan={plan}
+            onRevise={revise}
             onFocus={(day) => {
               setFocusDay(day);
               setTab("map");
