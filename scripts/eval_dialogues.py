@@ -9,7 +9,8 @@
 也可以用环境变量 EVAL_USERNAME / EVAL_PASSWORD 覆盖。
 
 每个场景声明期望：第一轮该走哪个动作、表单预填了哪些槽位、最终行程里必须出现/
-不能出现的文字。脚本逐条断言，最后打印通过率，并把完整输出写到 logs/eval_dialogues.json。
+不能出现的文字。每份行程还要过一组质量底线（没有退回规则选点、没有误导性的空时段、
+晚餐人均不超过 400 元）。脚本逐条断言，最后打印通过率，并把完整输出写到 logs/eval_dialogues.json。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -182,6 +184,23 @@ class Client:
             return _read_sse(response)
 
 
+# 每份行程都要满足的质量底线（与具体场景无关）。
+MAX_DINNER_PRICE = 400
+_PRICE = re.compile(r"人均 (\d+(?:\.\d+)?) 元")
+
+
+def plan_quality_failures(output: str) -> list[str]:
+    failures = []
+    if "智能选点暂时不可用" in output:
+        failures.append("LLM 选点失败，退回了规则选点")
+    if "没有第二个带证据的景点候选" in output:
+        failures.append("出现了误导性的空时段文案")
+    expensive = [float(value) for value in _PRICE.findall(output) if float(value) > MAX_DINNER_PRICE]
+    if expensive:
+        failures.append(f"晚餐人均超过 {MAX_DINNER_PRICE} 元：{expensive}")
+    return failures
+
+
 def _text_of(events: list[dict[str, Any]]) -> str:
     return "".join(e.get("content", "") for e in events if e.get("type") == "token")
 
@@ -227,6 +246,7 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
                 if errors:
                     failures.append(f"规划报错：{errors[0].get('message')}")
                 output = _text_of(plan_events)
+                failures.extend(plan_quality_failures(output))
 
     if submit_plan or tool_call is None:
         for needle in scenario.must_contain:
