@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, Menu, PanelRightOpen } from "lucide-react";
+import { ArrowUp, Loader2, Menu, PanelRightOpen, Square } from "lucide-react";
 import { useChat } from "@/store/chat";
 import { MessageItem } from "./MessageItem";
 
@@ -11,7 +11,7 @@ const SUGGESTIONS = [
 ];
 
 function Composer() {
-  const { send, busy } = useChat();
+  const { send, busy, canStop, stop } = useChat();
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -47,9 +47,15 @@ function Composer() {
           placeholder="说说你想去哪、玩几天、喜欢什么…"
           className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] outline-none placeholder:text-ink-300 dark:placeholder:text-ink-500"
         />
-        <button className="btn-accent h-11 w-11 shrink-0 p-0" disabled={busy || !text.trim()} onClick={submit} aria-label="发送">
-          {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
-        </button>
+        {canStop ? (
+          <button className="btn-primary h-11 w-11 shrink-0 p-0" onClick={stop} aria-label="停止生成" title="停止生成">
+            <Square className="h-4 w-4 fill-current" />
+          </button>
+        ) : (
+          <button className="btn-accent h-11 w-11 shrink-0 p-0" disabled={busy || !text.trim()} onClick={submit} aria-label="发送">
+            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+          </button>
+        )}
       </div>
       <p className="mt-2 text-center text-xs text-ink-400">Enter 发送 · Shift+Enter 换行 · 行程为草稿，价格与营业时间以实际为准</p>
     </div>

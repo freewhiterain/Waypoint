@@ -80,11 +80,17 @@ interface State {
   renameConversation(id: string, title: string): Promise<void>;
   deleteConversation(id: string): Promise<void>;
   send(text: string): Promise<void>;
+  /** 停止当前这轮问答的流式输出（规划不能中途停）。 */
+  stop(): void;
+  canStop: boolean;
   submitTrip(messageId: string, values: TripValues): Promise<void>;
   recommendDestination(messageId: string, values: TripValues): Promise<void>;
   openPlan(plan: TravelPlanDraft | null): void;
   notify(text: string, error?: boolean): void;
 }
+
+// 当前问答流的中止器；同一时间只有一轮问答在跑（busy 保证）。
+let currentController: AbortController | null = null;
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
@@ -252,6 +258,7 @@ export const useChat = create<State>((set, get) => {
     messages: [],
     loadingHistory: false,
     busy: false,
+    canStop: false,
     activePlan: null,
     toast: null,
 
@@ -345,6 +352,9 @@ export const useChat = create<State>((set, get) => {
         ],
       }));
 
+      const controller = new AbortController();
+      currentController = controller;
+      set({ canStop: true });
       try {
         await streamPost(`/api/v1/chat/stream/${conversationId}`, { content }, (event) => {
           if (event.type === "tool_call" && event.tool === "collect_trip_requirements") {
@@ -359,12 +369,17 @@ export const useChat = create<State>((set, get) => {
           } else if (event.type === "error") {
             patchMessage(assistantId, (m) => ({ ...m, error: true, content: event.message || "出错了，请稍后再试" }));
           }
-        });
+        }, controller.signal);
       } catch (error) {
-        patchMessage(assistantId, (m) => ({ ...m, error: true, content: (error as Error).message }));
+        if (controller.signal.aborted) {
+          patchMessage(assistantId, (m) => ({ ...m, content: m.content ? `${m.content}\n\n_（已停止）_` : "_已停止_" }));
+        } else {
+          patchMessage(assistantId, (m) => ({ ...m, error: true, content: (error as Error).message }));
+        }
       } finally {
+        currentController = null;
         patchMessage(assistantId, (m) => ({ ...m, streaming: false }));
-        set({ busy: false });
+        set({ busy: false, canStop: false });
         // 会话标题由第一句话生成，列表顺序按更新时间刷新。
         get().loadConversations().catch(() => {});
       }
@@ -448,6 +463,10 @@ export const useChat = create<State>((set, get) => {
       } finally {
         set({ busy: false });
       }
+    },
+
+    stop() {
+      currentController?.abort();
     },
 
     openPlan(plan) {
