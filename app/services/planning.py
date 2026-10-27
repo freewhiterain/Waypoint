@@ -51,7 +51,7 @@ class RequirementExtractor:
         if not draft.missing_fields() or not use_llm or not settings.llm_api_key:
             return draft
         try:
-            from app.agents.llm import get_llm
+            from app.core.llm import get_llm
 
             structured = get_llm().with_structured_output(TravelRequirementDraft)
             llm_draft = await structured.ainvoke(

@@ -99,7 +99,7 @@ async def test_enabled_llm_without_key_does_not_attempt_routing_model(monkeypatc
         raise AssertionError("routing must not call get_llm without a key")
 
     monkeypatch.setattr("app.services.main_agent.settings.llm_api_key", "")
-    monkeypatch.setattr("app.agents.llm.get_llm", unexpected_llm)
+    monkeypatch.setattr("app.core.llm.get_llm", unexpected_llm)
 
     decision = await MainAgentService(use_llm=True).decide("我想想看", [])
 
@@ -128,7 +128,7 @@ class _UnderstandingLlm:
 def _use_llm(monkeypatch, result):
     llm = _UnderstandingLlm(result)
     monkeypatch.setattr("app.services.main_agent.settings.llm_api_key", "configured")
-    monkeypatch.setattr("app.agents.llm.get_llm", lambda: llm)
+    monkeypatch.setattr("app.core.llm.get_llm", lambda: llm)
     return llm
 
 

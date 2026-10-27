@@ -200,7 +200,7 @@ async def build_subagent_tools(
 ) -> list[Any]:
     """Build normalized MCP and non-MCP tools for one domain worker."""
 
-    from app.agents.subagents.tool_policy import ToolPolicy
+    from app.schemas.tool_policy import ToolPolicy
 
     canonical = ToolPolicy.for_worker(worker)
     if policy is not None and policy.worker != worker:

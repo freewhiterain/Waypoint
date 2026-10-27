@@ -19,7 +19,7 @@ async def answer_open_question(query: str) -> str:
         return "\n".join(lines)
 
     try:
-        from app.agents.llm import get_llm
+        from app.core.llm import get_llm
 
         context = "\n".join(f"[{i + 1}] {item.content}（来源：{item.source}）" for i, item in enumerate(evidence))
         response = await get_llm(temperature=0.5).ainvoke(

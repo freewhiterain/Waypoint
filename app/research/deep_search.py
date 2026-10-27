@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
-from app.agents.subagents.tool_policy import ToolPolicy
+from app.schemas.tool_policy import ToolPolicy
 from app.rag.evidence import detect_fact_conflicts, is_evidence_fresh, merge_fact_conflicts
 from app.schemas.planning import Evidence, ResearchTask, TaskType
 from app.schemas.research import Claim, ResearchConflict, ResearchReport

@@ -12,7 +12,7 @@
 import httpx
 import pytest
 
-from app.agents import llm as llm_module
+from app.core import llm as llm_module
 
 
 @pytest.fixture(autouse=True)

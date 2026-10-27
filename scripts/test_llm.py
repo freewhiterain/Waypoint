@@ -3,7 +3,7 @@
 
 运行方式：python scripts/test_llm.py
 
-直接复用 app.agents.llm.get_llm()，所以这里测到的就是应用真正会用的
+直接复用 app.core.llm.get_llm()，所以这里测到的就是应用真正会用的
 供应商、模型和参数——包括结构化输出走哪种 method。单测普通对话是不够的：
 本项目的路由、需求抽取、Worker 分析和行程合成全部依赖结构化输出，
 普通对话通、结构化不通时，系统会静默退化成兜底路径而不报错。
@@ -21,7 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from pydantic import BaseModel, Field
 
-from app.agents.llm import get_llm
+from app.core.llm import get_llm
 from app.config import settings
 
 

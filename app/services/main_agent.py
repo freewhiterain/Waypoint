@@ -304,7 +304,7 @@ class MainAgentService:
         # 强制工具调用下模型偶尔仍会返回空结果，重试一次；还不行再交给规则兜底。
         for attempt in range(_UNDERSTAND_ATTEMPTS):
             try:
-                from app.agents.llm import get_llm
+                from app.core.llm import get_llm
 
                 structured = get_llm().with_structured_output(TurnUnderstanding)
                 return TurnUnderstanding.model_validate(await structured.ainvoke(messages))

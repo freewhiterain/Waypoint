@@ -10,7 +10,7 @@ def _planning_llm() -> Any | None:
     if not settings.llm_api_key.strip():
         return None
     try:
-        from app.agents.llm import get_llm
+        from app.core.llm import get_llm
 
         return get_llm()
     except Exception:

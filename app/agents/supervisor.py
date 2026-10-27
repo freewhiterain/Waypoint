@@ -181,7 +181,7 @@ async def synthesize_itinerary_with_llm(
     if not settings.llm_api_key:
         return template
     try:
-        from app.agents.llm import get_llm
+        from app.core.llm import get_llm
 
         evidence_digest = "\n".join(
             f"[{result.worker}] {result.summary} "

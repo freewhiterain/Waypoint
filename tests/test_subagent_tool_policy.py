@@ -1,6 +1,6 @@
 import pytest
 
-from app.agents.subagents.tool_policy import ToolPolicy
+from app.schemas.tool_policy import ToolPolicy
 from app.agents.subagents.tools import (
     ProviderError,
     build_subagent_tools,

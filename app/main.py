@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
             # 归还共享的 LLM httpx 连接池。
             try:
-                from app.agents.llm import aclose_http_clients
+                from app.core.llm import aclose_http_clients
 
                 await aclose_http_clients()
             except Exception as e:

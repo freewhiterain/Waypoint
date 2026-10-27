@@ -52,7 +52,7 @@ async def test_model_cannot_swap_places_or_change_travel_minutes(monkeypatch, re
         }
     )
     monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
-    monkeypatch.setattr("app.agents.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
+    monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
 
     days = await supervisor.synthesize_itinerary_with_llm(requirement, [], _template())
 
@@ -67,7 +67,7 @@ async def test_day_with_reshuffled_periods_falls_back_to_template(monkeypatch, r
         update={"slots": [TimeSlot(period="evening", title="火锅", description="只剩晚上")]}
     )
     monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
-    monkeypatch.setattr("app.agents.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
+    monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
 
     days = await supervisor.synthesize_itinerary_with_llm(requirement, [], _template())
 

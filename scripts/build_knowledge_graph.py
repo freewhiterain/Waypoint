@@ -41,7 +41,7 @@ async def build_graph(
 
     if settings.llm_api_key:
         if llm_factory is None:
-            from app.agents.llm import get_llm as llm_factory  # type: ignore[assignment]
+            from app.core.llm import get_llm as llm_factory  # type: ignore[assignment]
         try:
             llm = llm_factory()
         except Exception as exc:
