@@ -22,7 +22,7 @@ from app.models.message import Message
 from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
 from app.services.open_qa import answer_open_question
-from app.services.planning import KNOWN_DESTINATIONS
+from app.services.requirements import KNOWN_DESTINATIONS
 from app.services.react_agent import build_react_tools, run_react_agent
 from app.services.slots import (
     PostgresSlotRepository,

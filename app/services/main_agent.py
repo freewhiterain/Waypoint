@@ -16,7 +16,7 @@ from app.config import settings
 from app.schemas.slots import SlotUpdate, TripSlots, TurnUnderstanding
 from app.schemas.tools import AgentToolArguments, AgentToolCall, MainAgentDecision
 from app.utils.logger import app_logger
-from app.services.planning import KNOWN_DESTINATIONS, RequirementExtractor
+from app.services.requirements import KNOWN_DESTINATIONS, RequirementExtractor
 
 
 _AFFIRMATIONS = {"好的", "好啊", "好呀", "可以", "开始吧", "行", "行啊", "好的开始吧"}

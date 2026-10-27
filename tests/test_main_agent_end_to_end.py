@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.destination_recommender import DestinationRecommendation
 from app.api.v1 import chat as chat_api, tools as tools_api
 from app.services import trip_form as tools
 from app.services import chat_flow as chat
@@ -310,7 +311,7 @@ async def test_recommendation_saves_partial_values_then_selected_city_resumes(mo
         return FakePlan(requirement.destination)
 
     async def recommend(_partial_values, _context=None):
-        return tools.DestinationRecommendation(answer="可以考虑成都或厦门。", cities=["成都"])
+        return DestinationRecommendation(answer="可以考虑成都或厦门。", cities=["成都"])
 
     configure_tools(monkeypatch, session, repository, supervisor)
     monkeypatch.setattr(tools, "recommend_destinations", recommend)

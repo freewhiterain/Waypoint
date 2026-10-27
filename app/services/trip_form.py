@@ -22,8 +22,8 @@ from app.models.message import Message
 from app.schemas.events import SSEEvent
 from app.schemas.planning import TravelRequirement
 from app.schemas.tools import ToolResultRequest
-from app.services.destination_recommender import DestinationRecommendation, recommend_destinations
-from app.services.planning import render_plan_markdown
+from app.services.destination_recommender import recommend_destinations
+from app.services.plan_render import render_plan_markdown
 from app.services.slots import PostgresSlotRepository, confirm_slots
 from app.utils.logger import app_logger
 

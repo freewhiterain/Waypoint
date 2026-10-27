@@ -6,7 +6,8 @@ import pytest
 from app.main import app
 from app.schemas.events import SSEEvent
 from app.schemas.planning import ItineraryDay, TimeSlot, TravelPlanDraft, TravelRequirement
-from app.services.planning import RequirementExtractor, render_plan_markdown
+from app.services.plan_render import render_plan_markdown
+from app.services.requirements import RequirementExtractor
 from app.utils.logger import redact_text
 
 
@@ -34,7 +35,7 @@ def test_sse_event_preserves_legacy_token_and_error_fields():
 
 @pytest.mark.asyncio
 async def test_rule_extractor_handles_common_complete_request(monkeypatch):
-    monkeypatch.setattr("app.services.planning.settings.llm_api_key", "")
+    monkeypatch.setattr("app.services.requirements.settings.llm_api_key", "")
     draft = await RequirementExtractor().extract(
         "从上海出发，2026年8月1日去成都五日游，喜欢文化和美食"
     )
@@ -84,7 +85,7 @@ def test_log_redaction_masks_common_credentials():
 
 @pytest.mark.asyncio
 async def test_rule_extractor_reads_liang_as_two_days():
-    from app.services.planning import RequirementExtractor
+    from app.services.requirements import RequirementExtractor
 
     draft = await RequirementExtractor().extract("带爸妈去成都玩两天，2026-11-02出发", use_llm=False)
 

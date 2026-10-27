@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from app.services.destination_recommender import DestinationRecommendation
 from app.api.dependencies import get_current_user
 from app.governance.tool_invocations import CompletionOutcome, ToolInvocationRecord
 from app.main import app
@@ -295,7 +296,7 @@ async def test_recommendation_keeps_call_pending_and_returns_rag_answer(monkeypa
 
     async def recommend(partial_values, _context=None):
         queries.append(partial_values)
-        return tools.DestinationRecommendation(
+        return DestinationRecommendation(
             answer="Kyoto works well for a four-day food-focused trip.", cities=["Kyoto"]
         )
 

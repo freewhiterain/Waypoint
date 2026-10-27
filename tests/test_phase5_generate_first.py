@@ -5,14 +5,14 @@ from datetime import date, timedelta
 import pytest
 
 from app.schemas.planning import ResearchTask, TravelRequirement, TravelRequirementDraft
-from app.services.planning import RequirementExtractor
+from app.services.requirements import RequirementExtractor
 
 
 TODAY = date(2026, 7, 19)
 
 
 async def _extract(text: str, monkeypatch) -> TravelRequirementDraft:
-    monkeypatch.setattr("app.services.planning.settings.llm_api_key", "")
+    monkeypatch.setattr("app.services.requirements.settings.llm_api_key", "")
     return await RequirementExtractor().extract(text, today=TODAY)
 
 
@@ -55,7 +55,7 @@ def test_merge_prefers_rule_hits_and_fills_gaps():
 
 async def test_supervisor_draft_uses_confirmed_requirements(monkeypatch):
     from app.agents.supervisor import run_travel_planning
-    from app.services.planning import render_plan_markdown
+    from app.services.plan_render import render_plan_markdown
 
     requirement = TravelRequirement(destination="大理", departure_date=TODAY, days=3)
     draft = await run_travel_planning(requirement)

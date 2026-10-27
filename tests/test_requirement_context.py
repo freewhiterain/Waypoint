@@ -13,7 +13,7 @@ import pytest
 from app.services.trip_form import build_requirement
 from app.schemas.planning import TravelRequirement
 from app.services.main_agent import MainAgentService
-from app.services.planning import RequirementExtractor
+from app.services.requirements import RequirementExtractor
 
 from tests.test_trip_form_tool_flow import (
     FakeDraft,

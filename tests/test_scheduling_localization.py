@@ -1,7 +1,7 @@
 """行程的用户可见文案必须是中文。
 
 app/agents/itinerary_planner.py 的兜底文案（无候选时的时段标题/描述）
-会被 app/services/planning.py:render_plan_markdown 直接插进中文正文里：
+会被 app/services/plan_render.py:render_plan_markdown 直接插进中文正文里：
 
     - **上午**：Flexible local time。No second evidence-backed attraction was available.
 
@@ -69,7 +69,7 @@ def test_candidate_titles_still_pass_through_untouched():
 
 
 def test_internal_warnings_are_translated_or_hidden_from_the_user():
-    from app.services.planning import user_facing_warnings
+    from app.services.plan_render import user_facing_warnings
 
     shown = user_facing_warnings([
         "Deduplicated evidence a into b for task t.",

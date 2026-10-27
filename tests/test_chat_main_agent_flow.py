@@ -206,7 +206,7 @@ def test_legacy_slot_and_coordinator_interfaces_are_removed():
 
     from app.schemas.events import SSEEvent
     from app.schemas.planning import TravelRequirementDraft
-    from app.services import planning
+    from app.services import requirements as planning
 
     assert "ask" not in SSEEvent.model_fields["type"].annotation.__args__
     assert not hasattr(TravelRequirementDraft, "hard_missing")
