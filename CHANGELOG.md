@@ -3,7 +3,7 @@
 ## 2026-10-28 · 知行 → WayPoint
 
 一晚上的自动迭代：先用端到端评测找"输入和输出对不上"的地方，逐个修，再重做前端、理顺后端分层。
-每一步都单独提交，提交前跑全量测试（505 → 520 个用例全部通过）和对话评测（14/14）。
+每一步都单独提交，提交前跑全量测试（505 → 521 个用例全部通过）和对话评测（14/14）。
 
 ### 定位问题的方法
 
@@ -43,6 +43,8 @@ Leaflet 地图路线、研究依据、费用估算、深色模式、移动端适
 - `api/v1/chat.py`、`tools.py` 里两三百行的编排逻辑移到 `services/chat_flow.py`、`services/trip_form.py`，
   路由只做鉴权、归属校验和响应封装
 - LLM 工厂移到 `core/`，工具权限移到 `schemas/`（消除 research ↔ agents 互相依赖），删除空包 `app/tools`
+- `services/planning.py`（和 `agents/planner.py` 撞名）拆成 `requirements.py`（需求提取）和 `plan_render.py`（渲染）
+- 历史上下文里的整份行程 Markdown 压成一行摘要，减少理解和问答的 token
 
 ### 工程
 
