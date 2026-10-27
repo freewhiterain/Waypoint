@@ -12,6 +12,7 @@ from app.agents.itinerary_planner import (
     check_itinerary,
     plan_itinerary,
     schedule_by_rules,
+    top_up_days,
 )
 from app.schemas.planning import CandidateOption, TravelRequirement, WorkerResult
 
@@ -208,3 +209,27 @@ def test_selected_place_blocked_as_too_far_on_the_last_day_is_not_dropped():
     days = assign_days(["武侯祠", "锦里", "熊猫基地", "宽窄巷子"], {}, 2, "武侯酒店", costs)
 
     assert sorted(place for day in days for place in day) == ["宽窄巷子", "武侯祠", "熊猫基地", "锦里"]
+
+
+@pytest.mark.asyncio
+async def test_half_day_left_empty_by_the_llm_is_filled_with_a_nearby_candidate():
+    # 模型只选了 3 个景点，两天还空一个时段；武侯祠旁边的锦里没被选中，应补进来。
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="宽窄巷子"), SelectedPlace(id="熊猫基地")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), chengdu_results(LEGS), llm=llm)
+
+    titles = [slot.title for day in itinerary for slot in day.slots if slot.period != "evening"]
+    assert sorted(titles) == ["宽窄巷子", "武侯祠", "熊猫基地", "锦里"]
+    assert "自由活动" not in titles
+
+
+def test_top_up_leaves_the_slot_empty_when_nothing_is_close_enough():
+    costs = TravelCosts(chengdu_results([leg("武侯酒店", "熊猫基地", 50), leg("熊猫基地", "锦里", 120)]))
+
+    days = top_up_days([["熊猫基地"]], ["熊猫基地", "锦里"], "武侯酒店", costs)
+
+    assert days == [["熊猫基地"]]

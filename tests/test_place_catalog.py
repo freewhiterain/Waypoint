@@ -36,6 +36,7 @@ RESTAURANTS = """city,rank,name,type,latitude,longitude,open_time,close_time,pri
 成都,2,早午餐店,西餐,30.65,104.08,08:00,15:00,90.0,
 成都,3,粤菜馆,粤菜,30.66,104.07,11:00,21:30,160.0,"烧鹅,虾饺"
 成都,4,深夜烧烤,烧烤,30.66,104.06,18:00,02:00,80.0,
+成都,5,泰式海鲜火锅,东南亚菜,30.66,104.06,11:30,22:00,120.0,
 """
 HOTELS = """city,rank,name,type,latitude,longitude,price,beds
 成都,0,城市名人酒店,桑拿,30.654,104.065,353,2
@@ -90,7 +91,7 @@ def test_preference_matches_take_at_most_half_the_shortlist(catalog):
 
 def test_dinner_shortlist_drops_teahouses_early_closers_and_spicy_food_when_asked(catalog):
     names = [record.name for record in catalog.shortlist(requirement(), "food")]
-    assert names == ["马旺子", "粤菜馆", "深夜烧烤"]
+    assert names == ["马旺子", "粤菜馆", "深夜烧烤", "泰式海鲜火锅"]
 
     mild = [record.name for record in catalog.shortlist(requirement(food_preferences=["不吃辣"]), "food")]
     assert mild == ["粤菜馆", "深夜烧烤"]
@@ -235,6 +236,8 @@ def _plan(names, **windows):
     from app.agents.itinerary_planner import PlaceSelection, SelectedPlace, build_itinerary
 
     results = _results()
+    # 这几条只测已选景点怎么排；候选里只留选中的，避免空时段被 top_up_days 补上。
+    results[0].options = [option for option in results[0].options if option.name in names]
     for option in results[0].options:
         if option.name in windows:
             option.attributes["opening_hours"] = windows[option.name]
@@ -255,3 +258,17 @@ def test_late_opening_place_is_moved_to_the_afternoon():
 
     alone = _plan(["武侯祠"], 武侯祠="12:00-22:00")
     assert [(slot.period, slot.title) for slot in alone[0].slots[:2]] == [("morning", "自由活动"), ("afternoon", "武侯祠")]
+
+
+def test_dinner_shortlist_leaves_out_luxury_restaurants_unless_asked(tmp_path):
+    rows = ["city,rank,name,type,latitude,longitude,open_time,close_time,price,recommended_food"]
+    rows += [f"成都,{i},酒店中餐厅{i},粤菜,30.65,104.07,11:30,21:30,{900 + i},烧鹅" for i in range(3)]
+    rows += [f"成都,{i + 3},家常馆{i},川菜,30.65,104.07,11:00,21:30,{60 + i * 10},回锅肉" for i in range(8)]
+    (tmp_path / "restaurants.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    catalog = PlaceCatalog(tmp_path)
+
+    everyday = [record.name for record in catalog.shortlist(requirement(), "food")]
+    upscale = [record.name for record in catalog.shortlist(requirement(styles=["米其林"]), "food")]
+
+    assert not any(name.startswith("酒店中餐厅") for name in everyday)
+    assert upscale[0] == "酒店中餐厅0"

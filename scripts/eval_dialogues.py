@@ -91,6 +91,19 @@ def scenarios() -> list[Scenario]:
             must_not_contain=["上海", "第3天"],
         ),
         Scenario(
+            name="chengdu_no_spicy",
+            turns=[f"带爸妈去成都玩两天，{soon}出发，他们不吃辣，帮我规划一下"],
+            expect_prefill={"destination": "成都", "days": 2, "departure_date": soon},
+            must_contain=["成都", "第2天"],
+            must_not_contain=["麻辣", "火锅", "第3天"],
+        ),
+        Scenario(
+            name="shanghai_museum_lover",
+            turns=[f"{soon}去上海玩两天，喜欢博物馆和美术馆，帮我做个攻略"],
+            expect_prefill={"destination": "上海", "days": 2, "departure_date": soon},
+            must_contain=["上海", "博物馆"],
+        ),
+        Scenario(
             name="open_question_weather",
             turns=["成都最近天气怎么样"],
             expect_route="token",

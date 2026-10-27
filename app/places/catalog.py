@@ -34,6 +34,14 @@ MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 40, 8
 # 不适合当正餐的类型。
 _NOT_A_MEAL = {"面包甜点", "咖啡店", "酒吧/酒馆", "茶馆/茶室", ""}
 _SPICY = {"川菜", "湘菜", "火锅"}
+# 类型不辣、但从店名就能看出主打辣味的（"泰式海鲜火锅"的类型是东南亚菜）。
+_SPICY_NAME_WORDS = ("火锅", "麻辣", "香辣", "串串", "冒菜", "钵钵鸡", "辣子")
+# 源数据按热门程度排序，排在前面的多是酒店里的高档餐厅（上海前 30 家人均中位数 500 元）。
+# 默认按城市人均价格的 75 分位设上限，再夹在 200~350 元之间（上海 75 分位就有 500 元）；
+# 用户明确要高档时才放开。
+_PRICE_PERCENTILE = 0.75
+_PRICE_CAP_RANGE = (200.0, 350.0)
+_UPSCALE_WORDS = ("高档", "高端", "豪华", "奢华", "米其林", "黑珍珠", "不差钱", "预算充足", "人均不限")
 # 用户常见说法 → 景点类型里的关键词。
 _STYLE_ALIASES = {
     "历史": "历史古迹", "古迹": "历史古迹", "人文": "人文景观", "文化": "人文景观", "博物馆": "博物馆",
@@ -171,7 +179,13 @@ class PlaceCatalog:
             return records[:HOTEL_SHORTLIST]
         limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
         if category == "food":
-            records = [record for record in records if _suits_dinner(record, requirement)]
+            price_cap = None if _wants_upscale(requirement) else _price_cap(records)
+            records = [
+                record
+                for record in records
+                if _suits_dinner(record, requirement)
+                and (price_cap is None or record.price is None or record.price <= price_cap)
+            ]
             keywords = [*requirement.food_preferences, *requirement.styles]
         else:
             # 行程只排上午和下午两个景点时段，夜游类项目排不进去。
@@ -190,10 +204,26 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
     return any(keyword and (keyword in text or _STYLE_ALIASES.get(keyword, "\0") in text) for keyword in keywords)
 
 
+def _price_cap(records: list[PlaceRecord]) -> float | None:
+    prices = sorted(record.price for record in records if record.price)
+    if len(prices) < 4:
+        return None
+    percentile = prices[min(len(prices) - 1, int(len(prices) * _PRICE_PERCENTILE))]
+    low, high = _PRICE_CAP_RANGE
+    return min(max(percentile, low), high)
+
+
+def _wants_upscale(requirement: TravelRequirement) -> bool:
+    text = " ".join([*requirement.styles, *requirement.food_preferences, *requirement.special_needs])
+    return any(word in text for word in _UPSCALE_WORDS)
+
+
 def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:
     if record.type in _NOT_A_MEAL:
         return False
-    if any("不吃辣" in item or "不能吃辣" in item for item in requirement.food_preferences) and record.type in _SPICY:
+    if any("不吃辣" in item or "不能吃辣" in item for item in requirement.food_preferences) and (
+        record.type in _SPICY or any(word in record.name for word in _SPICY_NAME_WORDS)
+    ):
         return False
     # 晚餐时段要开着：19 点以后才关门，或者营业到第二天凌晨。
     if record.open_time and record.close_time and record.open_time < record.close_time < "19:00":

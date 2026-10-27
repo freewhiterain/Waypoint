@@ -323,6 +323,37 @@ def assign_days(
     return [_best_order(day_places, hotel_id, costs) for day_places in plan]
 
 
+def top_up_days(
+    day_plans: list[list[str]],
+    candidate_ids: list[str],
+    hotel_id: str | None,
+    costs: TravelCosts,
+) -> list[list[str]]:
+    """选点不够时，从没选中的候选里给空时段补一个顺路的景点。
+
+    LLM 常常只挑出 天数×2 少一两个的景点，原先空出来的半天会写成"没有第二个
+    带证据的景点候选"，可候选其实还有几十个。候选顺序已经是"命中偏好的在前、
+    其余按热门程度"，这里在离当天已有景点（没有时离酒店）不超过 MAX_HOP_MINUTES
+    的候选里取最近的；附近确实没有时才让时段空着。
+    """
+    used = {place_id for day in day_plans for place_id in day}
+    filled: list[list[str]] = []
+    for day_places in day_plans:
+        day_places = list(day_places)
+        while len(day_places) < ATTRACTIONS_PER_DAY:
+            anchor = day_places[-1] if day_places else hotel_id
+            pool = [place_id for place_id in candidate_ids if place_id not in used]
+            if not pool:
+                break
+            nearest = min(pool, key=lambda place_id: (costs.cost(anchor, place_id), pool.index(place_id)))
+            if costs.cost(anchor, nearest) > MAX_HOP_MINUTES:
+                break
+            day_places.append(nearest)
+            used.add(nearest)
+        filled.append(_best_order(day_places, hotel_id, costs))
+    return filled
+
+
 def _best_order(place_ids: list[str], hotel_id: str | None, costs: TravelCosts) -> list[str]:
     """每天只有两三个点，直接枚举所有顺序取总路程最短的。"""
     if len(place_ids) < 2:
@@ -346,6 +377,9 @@ def build_itinerary(
     day_plans = assign_days(
         [item.id for item in selection.attractions], preferred, requirement.days, selection.hotel_id, costs
     )
+    day_plans = top_up_days(
+        day_plans, [option.id for option in _options(results, "attractions")], selection.hotel_id, costs
+    )
     dinner_pool = [item.id for item in selection.dinners]
     used_dinners: set[str] = set()
 
@@ -367,7 +401,7 @@ def build_itinerary(
                                       description="当天的景点开门较晚，安排在下午；上午可以自由安排。"))
             else:
                 slots.append(TimeSlot(period="afternoon", title="自由活动",
-                                      description="没有第二个带证据的景点候选可安排。"))
+                                      description="附近没有能顺路安排的景点，下午留给休息或在周边随意逛逛。"))
 
         dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs)
         if dinner_id is not None:
