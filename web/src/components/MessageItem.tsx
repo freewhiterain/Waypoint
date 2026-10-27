@@ -123,7 +123,9 @@ function PlanSummary({ message }: { message: ChatMessage }) {
   const plan = message.plan!;
   const req = plan.requirement;
   const stops = plan.itinerary.flatMap((day) =>
-    day.slots.filter((s) => s.period === "morning" || s.period === "afternoon").map((s) => s.title),
+    day.slots
+      .filter((s) => (s.period === "morning" || s.period === "afternoon") && !s.title.endsWith("自由活动"))
+      .map((s) => s.title),
   );
   const active = activePlan === plan;
   return (
