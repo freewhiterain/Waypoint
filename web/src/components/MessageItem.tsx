@@ -122,7 +122,9 @@ function PlanSummary({ message }: { message: ChatMessage }) {
   const { openPlan, activePlan } = useChat();
   const plan = message.plan!;
   const req = plan.requirement;
-  const stops = plan.itinerary.flatMap((day) => day.slots.filter((s) => s.period !== "evening").map((s) => s.title));
+  const stops = plan.itinerary.flatMap((day) =>
+    day.slots.filter((s) => s.period === "morning" || s.period === "afternoon").map((s) => s.title),
+  );
   const active = activePlan === plan;
   return (
     <div className="card max-w-xl overflow-hidden">

@@ -22,7 +22,7 @@ export interface HistoryMessage {
   extra_info: Record<string, unknown> | null;
 }
 
-export type Period = "morning" | "afternoon" | "evening";
+export type Period = "morning" | "lunch" | "afternoon" | "evening";
 
 export interface TimeSlot {
   period: Period;

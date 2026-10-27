@@ -46,11 +46,18 @@ _PROXIMITY_COST = {"same_district": 20, "unknown": 35, "different_district": 50}
 _OPENING_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至到]\s*(\d{1,2}):(\d{2})")
 # 时段与开放时间的最低要求：上午 11 点前要开门，下午 15 点后才关门。
 _PERIOD_WINDOWS = {"morning": (11 * 60, None), "afternoon": (None, 15 * 60)}
+# 用户表达了对吃的兴趣时，每天在上午景点附近加一顿午餐（默认只排晚餐）。
+# 不能用单字"吃"：food_preferences 里常见的"不吃辣"也会命中。
+_FOOD_INTEREST_WORDS = ("美食", "小吃", "吃货", "好吃", "餐厅", "馆子", "探店", "夜宵", "地道菜", "特色菜")
+# 午餐要在上午景点附近：超过这个代价（分钟量级）宁可不排。
+MAX_LUNCH_MINUTES = 30
+# 午餐时段要开着：11:30 前开门、13:30 后才关门。
+_LUNCH_WINDOW = (11 * 60 + 30, 13 * 60 + 30)
 
 
 class SelectedPlace(BaseModel):
     id: str
-    reason: str = ""
+    reason: str = Field(default="", description="选它的理由，不超过 15 个字")
     preferred_day: int | None = Field(default=None, ge=1)
 
 
@@ -60,7 +67,8 @@ class PlaceSelection(BaseModel):
     hotel_id: str | None = None
     attractions: list[SelectedPlace] = Field(default_factory=list)
     dinners: list[SelectedPlace] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
+    # 原先还有一个自由文本的 notes 字段：DeepSeek 常把它写成没加引号的一段中文，
+    # 整个工具调用 JSON 解析失败，约三分之一的选点因此退回规则。结果里也没用到它。
 
 
 class Violation(BaseModel):
@@ -267,7 +275,6 @@ def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results
             hotel_id=selection.hotel_id if selection.hotel_id in hotel_ids else None,
             attractions=clean(selection.attractions, "attractions", requirement.days * ATTRACTIONS_PER_DAY),
             dinners=clean(selection.dinners, "dinners", requirement.days),
-            notes=selection.notes,
         ),
         warnings,
     )
@@ -366,6 +373,27 @@ def _best_order(place_ids: list[str], hotel_id: str | None, costs: TravelCosts) 
     return list(min(permutations(place_ids), key=route_cost))
 
 
+def wants_lunch(requirement: TravelRequirement) -> bool:
+    text = "".join([*requirement.styles, *requirement.food_preferences])
+    return any(word in text for word in _FOOD_INTEREST_WORDS)
+
+
+def _open_for_lunch(option: CandidateOption) -> bool:
+    hours = str(option.attributes.get("opening_hours") or "")
+    if hours == "全天":
+        return True
+    window = _opening_minutes(hours)
+    return window is None or (window[0] <= _LUNCH_WINDOW[0] and window[1] >= _LUNCH_WINDOW[1])
+
+
+def _pick_lunch(pool: list[str], used: set[str], near: str, costs: TravelCosts) -> str | None:
+    candidates = [place_id for place_id in pool if place_id not in used]
+    if not candidates:
+        return None
+    best = min(candidates, key=lambda place_id: (costs.cost(near, place_id), candidates.index(place_id)))
+    return best if costs.cost(near, best) <= MAX_LUNCH_MINUTES else None
+
+
 def build_itinerary(
     requirement: TravelRequirement,
     results: list[WorkerResult],
@@ -382,6 +410,16 @@ def build_itinerary(
     )
     dinner_pool = [item.id for item in selection.dinners]
     used_dinners: set[str] = set()
+    # 午餐从没被选作晚餐的餐饮候选里就近挑，不交给 LLM：它只关心"离上午景点近、中午开门"。
+    lunch_pool = (
+        [
+            option.id
+            for option in _options(results, "food")
+            if option.id not in dinner_pool and _open_for_lunch(option)
+        ]
+        if wants_lunch(requirement)
+        else []
+    )
 
     itinerary: list[ItineraryDay] = []
     for index, place_ids in enumerate(day_plans):
@@ -390,6 +428,12 @@ def build_itinerary(
         periods = _assign_periods([options[place_id] for place_id in place_ids])
         for period in ("morning", "afternoon"):
             option = periods.get(period)
+            if period == "afternoon" and previous is not None and periods.get("morning") is not None:
+                lunch_id = _pick_lunch(lunch_pool, used_dinners, previous, costs)
+                if lunch_id is not None:
+                    used_dinners.add(lunch_id)
+                    slots.append(_slot("lunch", options[lunch_id], costs.minutes(previous, lunch_id)))
+                    previous = lunch_id
             if option is not None:
                 slots.append(_slot(period, option, costs.minutes(previous, option.id)))
                 previous = option.id
@@ -504,7 +548,7 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
             continue
         # 没有真实耗时的路段按坐标估算：防止把相隔几十公里的景点排进同一天。
         # 只看景点之间；去郊外玩一天再回城里吃晚饭是正常安排，不算违规。
-        visited = [slot for slot in day.slots if slot.period != "evening" and slot.title in ids_by_name]
+        visited = [slot for slot in day.slots if slot.period in ("morning", "afternoon") and slot.title in ids_by_name]
         stops = [ids_by_name[slot.title] for slot in visited]
         estimated = sum(costs.known(first, second) or 0 for first, second in zip(stops, stops[1:]))
         if estimated > MAX_DAILY_TRAVEL_MINUTES:

@@ -40,16 +40,14 @@ def requirement():
 
 
 @pytest.mark.asyncio
-async def test_model_cannot_swap_places_or_change_travel_minutes(monkeypatch, requirement):
-    written = _template()[0].model_copy(
-        update={
-            "notes": [],
-            "slots": [
-                TimeSlot(period="morning", title="宽窄巷子", description="改写后的上午", travel_minutes=40),
-                TimeSlot(period="afternoon", title="锦里", description="改写后的下午", travel_minutes=8),
-                TimeSlot(period="evening", title="火锅", description="改写后的晚上"),
-            ],
-        }
+async def test_only_descriptions_are_taken_from_the_model(monkeypatch, requirement):
+    written = supervisor._DayText(
+        day=1,
+        slots=[
+            supervisor._SlotText(period="morning", description="改写后的上午"),
+            supervisor._SlotText(period="afternoon", description="改写后的下午"),
+            supervisor._SlotText(period="evening", description="改写后的晚上"),
+        ],
     )
     monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
     monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
@@ -63,12 +61,35 @@ async def test_model_cannot_swap_places_or_change_travel_minutes(monkeypatch, re
 
 @pytest.mark.asyncio
 async def test_day_with_reshuffled_periods_falls_back_to_template(monkeypatch, requirement):
-    written = _template()[0].model_copy(
-        update={"slots": [TimeSlot(period="evening", title="火锅", description="只剩晚上")]}
-    )
+    written = supervisor._DayText(day=1, slots=[supervisor._SlotText(period="evening", description="只剩晚上")])
     monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
     monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: _FakeStructured([written]))
 
     days = await supervisor.synthesize_itinerary_with_llm(requirement, [], _template())
 
     assert [slot.description for slot in days[0].slots] == ["模板描述"] * 3
+
+
+@pytest.mark.asyncio
+async def test_invalid_structured_output_is_retried_once(monkeypatch, requirement):
+    written = supervisor._DayText(
+        day=1,
+        slots=[supervisor._SlotText(period=slot.period, description="重试后的描述") for slot in _template()[0].slots],
+    )
+
+    class Flaky(_FakeStructured):
+        calls = 0
+
+        async def ainvoke(self, messages):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise ValueError("invalid tool call json")
+            return await super().ainvoke(messages)
+
+    monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
+    monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: Flaky([written]))
+
+    days = await supervisor.synthesize_itinerary_with_llm(requirement, [], _template())
+
+    assert Flaky.calls == 2
+    assert [slot.description for slot in days[0].slots] == ["重试后的描述"] * 3

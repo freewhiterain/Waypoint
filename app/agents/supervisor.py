@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
@@ -161,15 +161,32 @@ def _subagent_responses_from_state(state: SupervisorState) -> list[SubagentRespo
     return [SubagentResponse.model_validate(value) for value in response_values.values()]
 
 
-class _LLMItinerary(BaseModel):
-    """LLM 综合输出的结构化行程。"""
+class _SlotText(BaseModel):
+    period: Literal["morning", "lunch", "afternoon", "evening"]
+    description: str = Field(description="这个时段的一两句描述")
 
-    days: list[ItineraryDay] = Field(default_factory=list)
+
+class _DayText(BaseModel):
+    day: int
+    slots: list[_SlotText] = Field(default_factory=list)
+
+
+class _LLMItinerary(BaseModel):
+    """成文阶段模型只输出每个时段的描述。
+
+    原先要求模型把整份行程（日期、标题、耗时、营业时间、价格、备注）原样再输出
+    一遍，而这些字段最后都以模板为准；输出越长，DeepSeek 越容易生成不合法的
+    工具调用 JSON，整轮成文就退回模板。
+    """
+
+    days: list[_DayText] = Field(default_factory=list)
 
 
 # 成文时给模型看的候选名单长度：要盖住地点库的候选数，否则模型会把排进行程的地点
 # 说成"未在研究结果中出现"。交通段数量多、名称长，不需要全给。
 _DIGEST_OPTIONS = 30
+# 工具调用 JSON 偶尔不合法（OutputParserException），重试一次再退回模板。
+_SYNTHESIS_ATTEMPTS = 2
 
 
 async def synthesize_itinerary_with_llm(
@@ -190,45 +207,53 @@ async def synthesize_itinerary_with_llm(
             for result in results
         )
         structured = get_llm(temperature=0.3).with_structured_output(_LLMItinerary)
-        response = await structured.ainvoke(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是行程编排专家，以 JSON 格式输出。只能使用给定研究结果中出现过的景点、餐厅和事实，"
-                        "不得虚构任何班次、价格、营业时间或天气结论；"
-                        "缺乏依据的时段保持通用描述并注明需实时确认。"
-                        "保持天数、日期和 morning/afternoon/evening 三时段结构与模板一致。"
-                        "模板中每个时段的地点和先后顺序已按交通耗时排好，不得更换或调换，标题保留地点名称；"
-                        "travel_minutes 是真实交通耗时：每天第一个时段是从住处出发，其余时段是从同一天"
-                        "前一个时段的地点过来，可写进描述，为空的不要自己估算。"
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"需求：{requirement.model_dump_json()}\n"
-                        f"研究结果：\n{evidence_digest}\n"
-                        f"模板行程：{[day.model_dump_json() for day in template]}\n"
-                        "请在模板基础上，用研究结果改写每个时段的标题和描述。"
-                    ),
-                },
-            ]
-        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是行程编排专家，以 JSON 格式输出。只能使用给定研究结果中出现过的景点、餐厅和事实，"
+                    "不得虚构任何班次、价格、营业时间或天气结论；"
+                    "缺乏依据的时段保持通用描述并注明需实时确认。"
+                    "模板中每个时段的地点和先后顺序已按交通耗时排好，你只为每个时段写描述，"
+                    "按模板的天和时段顺序逐一返回，period 与模板一致，不要增删时段。"
+                    "travel_minutes 是真实交通耗时：每天第一个时段是从住处出发，其余时段是从同一天"
+                    "前一个时段的地点过来，可写进描述，为空的不要自己估算。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"需求：{requirement.model_dump_json()}\n"
+                    f"研究结果：\n{evidence_digest}\n"
+                    f"模板行程：{[day.model_dump_json() for day in template]}\n"
+                    "请用研究结果为模板里每个时段写描述。"
+                ),
+            },
+        ]
+        for attempt in range(_SYNTHESIS_ATTEMPTS):
+            try:
+                response = _LLMItinerary.model_validate(await structured.ainvoke(messages))
+                break
+            except Exception as exc:
+                if attempt + 1 == _SYNTHESIS_ATTEMPTS:
+                    raise
+                app_logger.warning(f"LLM 成文第 {attempt + 1} 次未返回有效结果，重试: {type(exc).__name__}")
         if len(response.days) == len(template):
             return [_merge_day(day, source) for day, source in zip(response.days, template)]
         app_logger.warning("LLM 综合返回的天数与模板不一致，退回模板行程")
         return template
-    except Exception:
-        app_logger.warning("LLM itinerary synthesis failed; using deterministic template: llm_synthesis_failed")
+    except Exception as exc:
+        app_logger.warning(
+            f"LLM itinerary synthesis failed; using deterministic template: llm_synthesis_failed "
+            f"({type(exc).__name__})"
+        )
         return template
 
 
-def _merge_day(written: ItineraryDay, template: ItineraryDay) -> ItineraryDay:
-    """模型只负责改写描述：地点、时段、耗时、营业时间、价格和当天备注一律以模板为准。
+def _merge_day(written: _DayText, template: ItineraryDay) -> ItineraryDay:
+    """模型只负责描述：地点、时段、耗时、营业时间、价格和当天备注一律以模板为准。
 
-    原先直接采用模型返回的整天，模型改了标题或换了时段时，行程里就会出现
-    算法没排过的地点，或者把排好的交通耗时写错。时段对不上的那一天整体用模板。
+    时段对不上（模型增删或调换了时段）的那一天整体用模板。
     """
     if [slot.period for slot in written.slots] != [slot.period for slot in template.slots]:
         return template

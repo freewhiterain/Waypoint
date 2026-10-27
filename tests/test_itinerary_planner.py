@@ -233,3 +233,46 @@ def test_top_up_leaves_the_slot_empty_when_nothing_is_close_enough():
     days = top_up_days([["熊猫基地"]], ["熊猫基地", "锦里"], "武侯酒店", costs)
 
     assert days == [["熊猫基地"]]
+
+
+def _lunch_results():
+    results = chengdu_results(LEGS + [leg("武侯祠", "小吃", 6), leg("锦里", "小吃", 7)])
+    results[1].options[1].attributes["opening_hours"] = "10:00-21:00"
+    return results
+
+
+@pytest.mark.asyncio
+async def test_food_lovers_get_a_lunch_near_the_morning_stop():
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1, styles=["美食"]), _lunch_results(), llm=llm)
+
+    assert [(slot.period, slot.title) for slot in itinerary[0].slots] == [
+        ("morning", "武侯祠"), ("lunch", "小吃"), ("afternoon", "锦里"), ("evening", "火锅"),
+    ]
+    assert itinerary[0].slots[1].travel_minutes == 6
+    assert itinerary[0].slots[2].travel_minutes == 7
+
+
+@pytest.mark.asyncio
+async def test_no_lunch_slot_without_food_interest():
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1), _lunch_results(), llm=llm)
+
+    assert [slot.period for slot in itinerary[0].slots] == ["morning", "afternoon", "evening"]
+
+
+def test_not_eating_spicy_food_is_not_read_as_food_interest():
+    from app.agents.itinerary_planner import wants_lunch
+
+    assert wants_lunch(requirement(styles=["美食"]))
+    assert not wants_lunch(requirement(food_preferences=["不吃辣"]))

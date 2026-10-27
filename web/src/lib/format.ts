@@ -10,7 +10,7 @@ export const WORKER_LABELS: Record<WorkerName, string> = {
   transport: "交通",
 };
 
-export const PERIOD_LABELS = { morning: "上午", afternoon: "下午", evening: "晚上" } as const;
+export const PERIOD_LABELS = { morning: "上午", lunch: "中午", afternoon: "下午", evening: "晚上" } as const;
 
 export const POPULAR_DESTINATIONS = ["成都", "北京", "上海", "杭州", "南京", "重庆", "广州", "西安"];
 export const DAY_OPTIONS = [2, 3, 4, 5];

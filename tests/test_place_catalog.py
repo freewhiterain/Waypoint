@@ -37,6 +37,7 @@ RESTAURANTS = """city,rank,name,type,latitude,longitude,open_time,close_time,pri
 成都,3,粤菜馆,粤菜,30.66,104.07,11:00,21:30,160.0,"烧鹅,虾饺"
 成都,4,深夜烧烤,烧烤,30.66,104.06,18:00,02:00,80.0,
 成都,5,泰式海鲜火锅,东南亚菜,30.66,104.06,11:30,22:00,120.0,
+成都,6,兔头店,小吃,30.66,104.06,09:00,01:00,52.0,"麻辣手撕烤兔,冷吃兔,兔腿,麻辣兔头"
 """
 HOTELS = """city,rank,name,type,latitude,longitude,price,beds
 成都,0,城市名人酒店,桑拿,30.654,104.065,353,2
@@ -91,7 +92,7 @@ def test_preference_matches_take_at_most_half_the_shortlist(catalog):
 
 def test_dinner_shortlist_drops_teahouses_early_closers_and_spicy_food_when_asked(catalog):
     names = [record.name for record in catalog.shortlist(requirement(), "food")]
-    assert names == ["马旺子", "粤菜馆", "深夜烧烤", "泰式海鲜火锅"]
+    assert names == ["马旺子", "粤菜馆", "深夜烧烤", "泰式海鲜火锅", "兔头店"]
 
     mild = [record.name for record in catalog.shortlist(requirement(food_preferences=["不吃辣"]), "food")]
     assert mild == ["粤菜馆", "深夜烧烤"]

@@ -61,7 +61,8 @@ def scenarios() -> list[Scenario]:
             name="chengdu_full_slots",
             turns=[f"帮我规划成都三天的行程，{soon}出发，喜欢美食"],
             expect_prefill={"destination": "成都", "days": 3, "departure_date": soon},
-            must_contain=["成都", "第1天", "第3天"],
+            # 说了喜欢美食：每天要有午餐
+            must_contain=["成都", "第1天", "第3天", "**中午**"],
             must_not_contain=["第4天"],
         ),
         Scenario(

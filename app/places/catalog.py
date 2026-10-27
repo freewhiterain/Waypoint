@@ -204,6 +204,13 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
     return any(keyword and (keyword in text or _STYLE_ALIASES.get(keyword, "\0") in text) for keyword in keywords)
 
 
+def _mostly_spicy(recommended_food: str) -> bool:
+    """推荐菜里一半以上带辣味词，就算主打辣（菜系写"小吃"的兔头店也会被识别出来）。"""
+    dishes = [dish for dish in recommended_food.split(",") if dish.strip()]
+    spicy = [dish for dish in dishes if any(word in dish for word in (*_SPICY_NAME_WORDS, "冷吃", "辣"))]
+    return bool(dishes) and len(spicy) * 2 >= len(dishes)
+
+
 def _price_cap(records: list[PlaceRecord]) -> float | None:
     prices = sorted(record.price for record in records if record.price)
     if len(prices) < 4:
@@ -222,7 +229,9 @@ def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:
     if record.type in _NOT_A_MEAL:
         return False
     if any("不吃辣" in item or "不能吃辣" in item for item in requirement.food_preferences) and (
-        record.type in _SPICY or any(word in record.name for word in _SPICY_NAME_WORDS)
+        record.type in _SPICY
+        or any(word in record.name for word in _SPICY_NAME_WORDS)
+        or _mostly_spicy(record.recommended_food)
     ):
         return False
     # 晚餐时段要开着：19 点以后才关门，或者营业到第二天凌晨。

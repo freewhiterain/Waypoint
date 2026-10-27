@@ -12,6 +12,7 @@ type Tab = "timeline" | "map" | "sources";
 
 const PERIOD_STYLES = {
   morning: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  lunch: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   afternoon: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
   evening: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
 };
@@ -43,7 +44,7 @@ function Slot({ slot, first }: { slot: TimeSlot; first: boolean }) {
               {cost && (
                 <span className="flex items-center gap-1">
                   <Ticket className="h-3.5 w-3.5" /> {cost}
-                  {slot.period === "evening" ? " / 人" : ""}
+                  {slot.period === "evening" || slot.period === "lunch" ? " / 人" : ""}
                 </span>
               )}
             </div>
