@@ -92,3 +92,12 @@ async def test_planning_search_merges_queries_and_drops_results_not_about_the_ci
     results = await search_for_planning(Noisy(), {"query": "x", "destination": "厦门", "category": "attractions"})
 
     assert [item.source_url for item in results] == ["https://a.test"]
+
+
+def test_places_the_user_named_get_their_own_search():
+    from app.agents.subagents.tools import web_search_queries
+
+    payload = {"query": "x", "destination": "大理", "category": "attractions", "must_visit": ["喜洲古镇"]}
+
+    assert web_search_queries(payload)[-1] == "大理 喜洲古镇"
+    assert "大理 喜洲古镇" not in web_search_queries({**payload, "category": "weather"})

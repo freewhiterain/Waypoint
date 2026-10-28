@@ -202,13 +202,21 @@ _WEB_QUERY_HINTS = {
 }
 
 
+_MAX_NAMED_QUERIES = 3
+
+
 def web_search_queries(payload: Mapping[str, Any]) -> list[str]:
-    """规划时的首轮搜索换成"城市 + 关键词"；深度搜索（带 limit）自己生成的查询原样使用。"""
+    """规划时的首轮搜索换成"城市 + 关键词"；深度搜索（带 limit）自己生成的查询原样使用。
+
+    用户点名要去的地点单独搜一次：地点库外的城市只能靠搜索拿候选，泛搜常搜不到冷门的。
+    """
     destination = str(payload.get("destination") or "").strip()
-    hints = _WEB_QUERY_HINTS.get(str(payload.get("category") or ""))
+    category = str(payload.get("category") or "")
+    hints = _WEB_QUERY_HINTS.get(category)
     if "limit" in payload or not destination or hints is None:
         return [str(payload["query"])]
-    return [f"{destination} {hint}" for hint in hints]
+    named = [f"{destination} {place}" for place in payload.get("must_visit") or []][:_MAX_NAMED_QUERIES]
+    return [f"{destination} {hint}" for hint in hints] + (named if category in ("attractions", "food") else [])
 
 
 async def search_for_planning(adapter: Any, payload: Mapping[str, Any]) -> list[Evidence]:

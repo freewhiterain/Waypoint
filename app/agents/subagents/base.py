@@ -658,6 +658,7 @@ class DomainSubagent:
             "departure_date": requirement.departure_date.isoformat(),
             "days": requirement.days,
             "category": self.worker,
+            "must_visit": list(requirement.must_visit),
             "forecast": self.worker == "weather",
         }
 
