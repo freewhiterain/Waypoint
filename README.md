@@ -32,7 +32,7 @@ WayPoint 是一个基于 **LangGraph** 的多 Agent 旅行规划系统。用户�
 | 行程编排 | LLM 只能按 id 选点 → 算法按交通耗时分天排序 → 检查开放时间和每日路程，违规原因反馈给 LLM 重选（最多 3 轮） |
 | 证据治理 | 每条事实带来源、查询时间和置信度；证据不支持的地点整条丢弃，不支持的属性只去掉那一项 |
 | 前端 | React 单页应用：流式对话、研究进度、逐日时间线、Leaflet 地图路线、研究依据、深浅色主题 |
-| 评测 | 530+ 个单元/集成测试 + 14 个端到端对话场景（路由、表单预填、行程内容和质量底线断言）+ GitHub Actions |
+| 评测 | 560+ 个单元/集成测试 + 可判定约束检查（环境层/逻辑层）+ 17 个端到端对话场景 + 模拟用户多轮评测 + pass^k 稳定性 + GitHub Actions |
 
 ## 架构
 
@@ -127,10 +127,21 @@ python app/run.py
 python -m pytest -q                       # 单元 + 集成测试（默认跳过需要真实模型和网络的用例）
 python scripts/eval_dialogues.py          # 端到端对话评测，需先启动服务
 python scripts/eval_dialogues.py --no-plan  # 只看路由和表单预填，不跑规划
+python scripts/eval_dialogues.py --repeat 3 # 每个场景跑 3 次，报告 pass^3
+python scripts/eval_simulated_users.py      # 模型扮演用户的多轮对话评测
 ```
 
-`eval_dialogues.py` 覆盖完整槽位、缺日期、多轮补充、中途改目的地、天气问答、目的地推荐、闲聊和越界请求等场景，
-逐条断言路由动作、表单预填值和最终行程里必须出现/不能出现的内容，完整输出写到 `logs/eval_dialogues.json`。
+评测分三层，思路来自 [ChinaTravel](https://arxiv.org/abs/2412.13682)（ICLR 2026）和 [τ-bench](https://github.com/sierra-research/tau-bench)：
+
+| 层 | 工具 | 测什么 |
+| --- | --- | --- |
+| 可判定约束 | `app/evaluation/plan_checks.py` | 对结构化行程做程序判定。**环境层**：地点、门票价、营业时间能在地点库对上，描述里写的价格和营业时间与字段一致（防止随口编价）。**逻辑层**：天数和日期、跨天不重复、必去/不去的地点、轻松的天、每天有晚饭、时段落在营业时间内 |
+| 固定台词场景 | `scripts/eval_dialogues.py` | 17 个多轮场景：完整槽位、缺日期、多轮补充、出发地、必去地点、夜景、带老人、中途改目的地、规划后再修改、问答、推荐、闲聊、越界。报告交付率 DR、环境通过率 EPR、逻辑通过率 LPR、最终通过率 FPR |
+| 模拟用户 | `scripts/eval_simulated_users.py` | 每个场景只给模型一个隐藏目标和说话风格（话少、先寒暄、中途改主意、日期后补），台词现编。判定能否进入规划、需求是否理解对、行程是否过检查 |
+
+模型输出有随机性，单次通过不代表稳定：`--repeat N` 报告 pass^N（N 次全过的场景占比），并列出时好时坏的场景。
+调优流程按 [error analysis](https://hamel.dev/blog/posts/evals-faq/why-is-error-analysis-so-important-in-llm-evals-and-how-is-it-performed.html)
+的做法：读失败的完整对话（`logs/*.json`），找第一个出错的环节，归类计数，先修最常见的一类，并把它固化成单元测试。
 
 ## 项目结构
 
