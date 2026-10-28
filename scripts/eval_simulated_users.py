@@ -53,6 +53,10 @@ class SimulatedUser:
     departure_date: date
     must_visit: list[str] = field(default_factory=list)
     food_avoid: list[str] = field(default_factory=list)
+    # 看完第一版行程后想改的地方（自然语言），以及改完后行程里不能再出现的地点、要轻松的天
+    after_plan: str = ""
+    avoid: list[str] = field(default_factory=list)
+    relaxed_days: list[int] = field(default_factory=list)
 
 
 def _next_weekday(weekday: int) -> date:
@@ -94,6 +98,21 @@ def users() -> list[SimulatedUser]:
             goal=f"一开始说想去杭州，聊一句后改主意，最终去苏州玩 2 天，{soon.isoformat()} 出发。",
             persona="犹豫不决，会先提杭州，下一句说算了改去苏州。",
             destination="苏州", days=2, departure_date=soon,
+        ),
+        SimulatedUser(
+            name="xian_outside_catalog",
+            # 西安不在地点库里：候选全靠联网搜索
+            goal=f"{soon.isoformat()} 去西安玩 3 天，兵马俑一定要去，喜欢历史。",
+            persona="说话直接，第一句就说城市、天数和日期。",
+            destination="西安", days=3, departure_date=soon, must_visit=["兵马俑"],
+        ),
+        SimulatedUser(
+            name="chengdu_revise_after_plan",
+            goal=f"{soon.isoformat()} 去成都玩 2 天。",
+            persona="说话简短。",
+            destination="成都", days=2, departure_date=soon,
+            after_plan="看完行程后不想去熊猫基地，并且希望第二天轻松一点",
+            avoid=["熊猫"], relaxed_days=[2],
         ),
         SimulatedUser(
             name="hangzhou_date_later",
@@ -138,6 +157,30 @@ def form_notes(llm: Any, user: SimulatedUser, history: list[tuple[str, str]]) ->
     return "" if text in ("无", "没有", "") else text[:300]
 
 
+_REVISE_PROMPT = """你刚收到旅行助手给你做的行程，内容如下：
+{plan}
+你想这样修改：{change}
+用一句口语化的话告诉助手，不加引号、不加旁白。"""
+
+
+def revision_line(llm: Any, user: SimulatedUser, plan_text: str) -> str:
+    response = llm.invoke([HumanMessage(content=_REVISE_PROMPT.format(plan=plan_text[:1500], change=user.after_plan))])
+    return str(response.content).strip().strip("“”\"").splitlines()[0][:200]
+
+
+def _revision_issues(user: SimulatedUser, result: dict[str, Any]) -> list[str]:
+    issues = []
+    titles = [slot["title"] for day in result.get("itinerary") or [] for slot in day["slots"]]
+    for place in user.avoid:
+        if any(place in title for title in titles):
+            issues.append(f"用户说不去「{place}」，改完的行程里还有")
+    relaxed = set((result.get("requirement") or {}).get("relaxed_days") or [])
+    for day in user.relaxed_days:
+        if day not in relaxed:
+            issues.append(f"没记下第{day}天要轻松")
+    return issues
+
+
 def _form_of(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     return next((e for e in events if e.get("type") == "tool_call" and e.get("tool") == FORM_TOOL), None)
 
@@ -156,6 +199,31 @@ def _understanding_issues(user: SimulatedUser, requirement: dict[str, Any]) -> l
     for word in user.food_avoid:
         if word not in food:
             issues.append(f"没记下忌口「{word}」")
+    return issues
+
+
+def _revise(
+    client: Client, llm: Any, user: SimulatedUser, conversation_id: str, plan_text: str,
+    history: list[tuple[str, str]], transcript: list[dict[str, Any]], issues: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """看完行程提修改：应再次弹出表单，提交后以改完的那版判定行程。"""
+    history.append(("assistant", "（给出了第一版行程）"))
+    line = revision_line(llm, user, plan_text)
+    history.append(("user", line))
+    events = client.send(conversation_id, line)
+    transcript.append({"user": line, "events": events})
+    form = _form_of(events)
+    if form is None:
+        issues["delivery"].append(f"修改意见「{line}」没有触发重新规划")
+        return issues
+    replan = client.submit_form(form["call_id"], form["arguments"]["initial_values"])
+    transcript.append({"form": form["arguments"], "events": replan})
+    # 第一版的问题被改掉才算数：只按改完的这版判定行程
+    issues = {"delivery": issues["delivery"], "environment": [], "logic": []}
+    _structured_issues(replan, issues)
+    result = next((e["payload"].get("result") for e in replan if e.get("type") == "result"), None)
+    if isinstance(result, dict):
+        issues["logic"].extend(_revision_issues(user, result))
     return issues
 
 
@@ -199,6 +267,8 @@ def run_user(client: Client, llm: Any, user: SimulatedUser) -> dict[str, Any]:
         result = next((e["payload"].get("result") for e in plan_events if e.get("type") == "result"), None)
         if isinstance(result, dict) and result.get("requirement"):
             issues["logic"].extend(_understanding_issues(user, result["requirement"]))
+        if user.after_plan and isinstance(result, dict):
+            issues = _revise(client, llm, user, conversation_id, _text_of(plan_events), history, transcript, issues)
 
     failures = [f"[{layer}] {message}" for layer in LAYERS for message in issues[layer]]
     return {

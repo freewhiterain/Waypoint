@@ -38,3 +38,13 @@ def test_every_simulated_user_has_a_reachable_goal():
     for user in sim.users():
         assert user.departure_date >= date.today()
         assert user.destination in user.goal
+
+
+def test_revision_check_looks_at_the_revised_plan():
+    user = sim.SimulatedUser(name="r", goal="", persona="", destination="成都", days=2,
+                             departure_date=date(2026, 11, 3), after_plan="x", avoid=["熊猫"], relaxed_days=[2])
+    still_there = {"itinerary": [{"slots": [{"title": "成都大熊猫繁育研究基地"}]}], "requirement": {"relaxed_days": []}}
+    fixed = {"itinerary": [{"slots": [{"title": "武侯祠"}]}], "requirement": {"relaxed_days": [2]}}
+
+    assert len(sim._revision_issues(user, still_there)) == 2
+    assert sim._revision_issues(user, fixed) == []
