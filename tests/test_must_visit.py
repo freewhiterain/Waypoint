@@ -39,6 +39,8 @@ def test_named_by_matches_short_and_full_names_but_ignores_branch_names():
     assert named_by("成都大熊猫繁育研究基地", ["成都大熊猫繁育研究基地"])
     assert not named_by("四季民福烤鸭店(故宫店)", ["故宫"])
     assert not named_by("锦里", ["宽"])
+    assert named_by("秦始皇帝陵博物院(兵马俑)", ["兵马俑"])  # 括号里是别名
+    assert not named_by("盛天毛血旺(国泰广场店)", ["国泰广场"])
 
 
 def test_catalog_shortlist_puts_named_places_first_even_if_unpopular():

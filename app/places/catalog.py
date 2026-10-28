@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import re
+
 import csv
 import math
 from functools import lru_cache
@@ -219,10 +221,20 @@ class PlaceCatalog:
         return named + preferred + rest + night_extra
 
 
+_PARENTHESES = re.compile(r"[(（]([^)）]*)[)）]")
+
+
 def named_by(name: str, terms: list[str]) -> bool:
-    """地点名和用户说的叫法对得上："洪崖洞" ↔ "洪崖洞民俗风貌区"，"熊猫基地"也能对上全名里的片段。"""
+    """地点名和用户说的叫法对得上："洪崖洞" ↔ "洪崖洞民俗风貌区"，"熊猫基地"也能对上全名里的片段。
+
+    括号里是别名时也算（"秦始皇帝陵博物院(兵马俑)"），是分店名时不算（"四季民福烤鸭店(故宫店)"）。
+    """
     base = name.split("(")[0].split("（")[0]
-    return any(term and len(term) >= 2 and (term in base or base in term) for term in terms)
+    aliases = [base, *(alias for alias in _PARENTHESES.findall(name) if alias and not alias.endswith("店"))]
+    return any(
+        term and len(term) >= 2 and any(term in alias or (alias and alias in term) for alias in aliases)
+        for term in terms
+    )
 
 
 def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
