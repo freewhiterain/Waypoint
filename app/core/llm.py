@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, create_model
 
 from app.config import settings
 
@@ -63,10 +64,20 @@ class StructuredChatOpenAI(ChatOpenAI):
     下游。只有 function_calling 既被支持、又能保住 Pydantic 契约。
 
     调用方仍可显式传 method 覆盖，换回支持 json_schema 的供应商时不用改这里。
+
+    工具名以下划线开头的 schema（如 `_DayText`）会换成去掉下划线的子类：
+    部分反代会把这类工具名改写成 `function__DayText` 返回，解析时对不上名字。
+    子类仍是原 schema 的实例，调用方不受影响。
     """
 
     def with_structured_output(self, schema=None, *, method: str = "function_calling", **kwargs: Any):
-        return super().with_structured_output(schema, method=method, **kwargs)
+        return super().with_structured_output(_tool_safe(schema), method=method, **kwargs)
+
+
+def _tool_safe(schema: Any) -> Any:
+    if isinstance(schema, type) and issubclass(schema, BaseModel) and schema.__name__.startswith("_"):
+        return create_model(schema.__name__.lstrip("_"), __base__=schema, __doc__=schema.__doc__)
+    return schema
 
 
 def get_llm(temperature: float | None = None) -> StructuredChatOpenAI:
