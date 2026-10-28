@@ -7,8 +7,8 @@
 import asyncio
 import json
 from contextlib import suppress
-from datetime import timedelta
-from typing import AsyncIterator
+from datetime import date, timedelta
+from typing import Any, AsyncIterator
 
 from app.agents import factory as agent_factory
 from app.api.sse import SSEEventBuilder, sse
@@ -24,7 +24,8 @@ from app.schemas.planning import TravelRequirement
 from app.schemas.tools import ToolResultRequest
 from app.services.destination_recommender import recommend_destinations
 from app.services.plan_render import render_plan_markdown
-from app.services.slots import PostgresSlotRepository, confirm_slots
+from app.schemas.slots import SlotUpdate
+from app.services.slots import PostgresSlotRepository, apply_slot_update, confirm_slots, load_slots, store_slots
 from app.utils.logger import app_logger
 
 
@@ -60,6 +61,50 @@ async def save_assistant_message(conversation_id: str, content: str, extra_info:
         db.add(message)
         await db.commit()
         await db.refresh(message)
+
+
+_NOTES_PROMPT = (
+    "用户在行程表单的“补充要求”里写了一段话。提取其中的游玩兴趣（styles）、口味或忌口（food_preferences）、"
+    "点名要去的具体地点（must_visit）、不想去的地点（avoid_places）、要轻松些的第几天（relaxed_days）、"
+    "人数（adults/children）和出发城市（origin）。目的地、日期、天数以表单为准，不要填。没提到的留空。"
+)
+# 目的地、日期、天数以表单为准：补充要求里即使提到也不改。
+_FORM_OWNED = {"destination": None, "departure_date": None, "days": None}
+
+
+async def extract_note_slots(notes: str, llm: Any | None = None) -> SlotUpdate | None:
+    if llm is None:
+        from app.core.llm import get_llm
+
+        llm = get_llm()
+    try:
+        update = SlotUpdate.model_validate(await llm.with_structured_output(SlotUpdate).ainvoke(
+            [{"role": "system", "content": _NOTES_PROMPT}, {"role": "user", "content": notes}]
+        ))
+    except Exception as exc:
+        app_logger.warning(f"补充要求解析失败，按没有补充处理: {type(exc).__name__}: {exc}")
+        return None
+    return update.model_copy(update=_FORM_OWNED)
+
+
+async def apply_form_notes(
+    repository, conversation_id: str | None, notes: str, arguments: dict | None, llm: Any | None = None
+) -> dict:
+    """把补充要求解析成槽位，写回会话，并并进这次规划的需求上下文；失败时原样返回。"""
+    arguments = dict(arguments or {})
+    notes = notes.strip()
+    if not notes or not conversation_id:
+        return arguments
+    update = await extract_note_slots(notes, llm)
+    if update is None:
+        return arguments
+    slots = await load_slots(repository, conversation_id)
+    slots, dropped = apply_slot_update(slots, update, user_text=notes, today=date.today())
+    if dropped:
+        app_logger.info(f"补充要求里没有依据的槽位被丢弃: {dropped}")
+    await store_slots(repository, conversation_id, slots)
+    arguments["requirement_context"] = {**(arguments.get("requirement_context") or {}), **slots.requirement_context()}
+    return arguments
 
 
 def build_requirement(form_result: dict, arguments: dict | None) -> TravelRequirement:
@@ -202,7 +247,8 @@ async def tool_result_stream(call_id: str, data: ToolResultRequest, user_id: str
         if data.status != "completed" or data.result is None:
             raise ValueError("A completed tool result requires destination, departure_date, and days")
 
-        confirmed_result = data.result.model_dump(mode="json")
+        # 没写补充要求时不带空的 notes，保持和原来的确认结果一致
+        confirmed_result = data.result.model_dump(mode="json", exclude=set() if data.result.notes else {"notes"})
         acquire_guard = getattr(repository, "acquire_processing_guard", None)
         if acquire_guard is not None:
             processing_guard = await acquire_guard()
@@ -226,8 +272,11 @@ async def tool_result_stream(call_id: str, data: ToolResultRequest, user_id: str
 
         claim_version = claim.claim_version
         record = claim.record
-        requirement = build_requirement(data.result.model_dump(), record.arguments)
-        await confirm_slots(PostgresSlotRepository(), record.conversation_id, data.result.model_dump())
+        form_values = data.result.model_dump(exclude={"notes"})
+        slot_repository = PostgresSlotRepository()
+        await confirm_slots(slot_repository, record.conversation_id, form_values)
+        arguments = await apply_form_notes(slot_repository, record.conversation_id, data.result.notes, record.arguments)
+        requirement = build_requirement(form_values, arguments)
         research_events: asyncio.Queue[SSEEvent] = asyncio.Queue()
 
         async def publish_research_event(task_event):

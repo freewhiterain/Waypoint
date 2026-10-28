@@ -21,6 +21,7 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
   const [values, setValues] = useState<TripValues>(trip.values);
   const [editing, setEditing] = useState(trip.askFields.length > 0);
   const [touched, setTouched] = useState(false);
+  const [notes, setNotes] = useState("");
 
   useEffect(() => setValues(trip.values), [trip.values]);
 
@@ -53,7 +54,7 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
       setEditing(true);
       return;
     }
-    submitTrip(messageId, values);
+    submitTrip(messageId, values, notes);
   }
 
   return (
@@ -200,6 +201,20 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
             )}
           </div>
         )}
+
+        <div>
+          <p className="mb-2 text-sm font-medium">
+            还有什么要求？<span className="ml-1 text-xs font-normal text-ink-400">可选</span>
+          </p>
+          <textarea
+            rows={2}
+            maxLength={300}
+            className="input w-full resize-none py-2 text-sm"
+            placeholder="想去的地方、忌口、节奏……比如：洪崖洞必去，不吃辣，带老人别太累"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
 
         {trip.error && <p className="text-sm text-red-500">{trip.error}</p>}
 

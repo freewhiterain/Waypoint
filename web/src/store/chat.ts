@@ -83,7 +83,7 @@ interface State {
   /** 停止当前这轮问答的流式输出（规划不能中途停）。 */
   stop(): void;
   canStop: boolean;
-  submitTrip(messageId: string, values: TripValues): Promise<void>;
+  submitTrip(messageId: string, values: TripValues, notes?: string): Promise<void>;
   recommendDestination(messageId: string, values: TripValues): Promise<void>;
   openPlan(plan: TravelPlanDraft | null): void;
   notify(text: string, error?: boolean): void;
@@ -386,7 +386,7 @@ export const useChat = create<State>((set, get) => {
       }
     },
 
-    async submitTrip(messageId, values) {
+    async submitTrip(messageId, values, notes = "") {
       const message = get().messages.find((m) => m.id === messageId);
       const trip = message?.trip;
       if (!trip || get().busy) return;
@@ -407,6 +407,7 @@ export const useChat = create<State>((set, get) => {
               destination: values.destination.trim(),
               departure_date: values.departure_date,
               days: Number(values.days),
+              ...(notes.trim() ? { notes: notes.trim() } : {}),
             },
           },
           (event) => {

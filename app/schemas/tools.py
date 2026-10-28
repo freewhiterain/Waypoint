@@ -70,7 +70,8 @@ class TripFormArguments(BaseModel):
 
 
 class TripFormResult(TripFormArguments):
-    pass
+    # 表单里的"补充要求"：想去的地方、忌口、节奏等，提交时解析进需求。
+    notes: str = Field(default="", max_length=300)
 
 
 class ToolCallPayload(BaseModel):

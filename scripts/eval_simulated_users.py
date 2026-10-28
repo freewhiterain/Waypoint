@@ -61,7 +61,7 @@ def _next_weekday(weekday: int) -> date:
 
 
 def users() -> list[SimulatedUser]:
-    friday = _next_weekday(4)
+    friday = _next_weekday(0) + timedelta(days=4)  # 下周五 = 下周一 + 4
     saturday = _next_weekday(5)
     soon = date.today() + timedelta(days=6)
     return [
@@ -123,6 +123,19 @@ def next_user_line(llm: Any, user: SimulatedUser, history: list[tuple[str, str]]
     return str(response.content).strip().strip("“”\"").splitlines()[0][:200]
 
 
+_NOTES_PROMPT = """助手弹出了行程表单，目的地、日期、天数已经填好，最下面有一栏“还有什么要求？（可选）”。
+你的目标：{goal}
+到目前为止你在对话里说过的话：{said}
+目标里还有你没说过的要求（想去的地方、忌口、同行的人、节奏等）就写进这一栏，用一句话；都说过了或没有就只输出“无”。"""
+
+
+def form_notes(llm: Any, user: SimulatedUser, history: list[tuple[str, str]]) -> str:
+    said = "；".join(text for role, text in history if role == "user")
+    response = llm.invoke([HumanMessage(content=_NOTES_PROMPT.format(goal=user.goal, said=said))])
+    text = str(response.content).strip().strip("“”\"")
+    return "" if text in ("无", "没有", "") else text[:300]
+
+
 def _form_of(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     return next((e for e in events if e.get("type") == "tool_call" and e.get("tool") == FORM_TOOL), None)
 
@@ -170,6 +183,10 @@ def run_user(client: Client, llm: Any, user: SimulatedUser) -> dict[str, Any]:
         for key, value in values.items():
             if key in prefill and prefill[key] != value:
                 issues["logic"].append(f"表单预填 {key}={prefill[key]!r}，用户要的是 {value!r}")
+        notes = form_notes(llm, user, history)
+        if notes:
+            values["notes"] = notes
+            history.append(("form", notes))
         plan_events = client.submit_form(form["call_id"], values)
         transcript.append({"form": values, "events": plan_events})
         _structured_issues(plan_events, issues)
@@ -184,11 +201,14 @@ def run_user(client: Client, llm: Any, user: SimulatedUser) -> dict[str, Any]:
         "passed": not failures,
         "layers": {layer: not issues[layer] for layer in LAYERS},
         "failures": failures,
-        "turns": len(history) // 2 + 1,
+        "turns": sum(role == "user" for role, _ in history),
         "seconds": round(time.perf_counter() - started, 1),
         "dialogue": history,
         "transcript": transcript,
     }
+
+
+_SPEAKERS = {"user": "用户", "assistant": "助手", "form": "表单补充"}
 
 
 def main() -> int:
@@ -218,7 +238,7 @@ def main() -> int:
             print(f"{prefix}[{'PASS' if result['passed'] else 'FAIL'}] {user.name} "
                   f"({result.get('turns', '-')} 轮, {result.get('seconds', '-')}s)")
             for role, text in result.get("dialogue", []):
-                print(f"       {'用户' if role == 'user' else '助手'}：{text[:80]}")
+                print(f"       {_SPEAKERS[role]}：{text[:80]}")
             for failure in result["failures"]:
                 print(f"       - {failure}")
 
