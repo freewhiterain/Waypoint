@@ -314,6 +314,9 @@ async def test_the_same_restaurant_is_not_repeated_on_later_evenings():
         ("南京博物院", "南京总统府", False),  # 主干只剩城市名时不算同一处
         ("成都博物馆", "成都大熊猫繁育研究基地", False),
         ("武侯祠", "锦里", False),
+        ("楼外楼(西湖景区孤山路店)", "西湖风景名胜区", False),  # 括号里的分店名不算
+        ("四季民福烤鸭店(故宫店)", "故宫博物院", False),
+        ("南京大牌档(夫子庙平江府店)", "夫子庙", False),
     ],
 )
 def test_same_place_recognises_different_names_for_one_spot(first, second, expected):

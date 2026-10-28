@@ -315,12 +315,17 @@ def select_places_by_rules(
 _GENERIC_SUFFIXES = ("风景名胜区", "风景区", "旅游区", "景区", "公园", "博物院", "博物馆", "寺", "古镇")
 
 
+def _base_name(name: str) -> str:
+    """去掉括号里的分店/备注："楼外楼(西湖景区孤山路店)" → "楼外楼"。"""
+    return name.split("(")[0].split("（")[0].strip()
+
+
 def _core_name(name: str, city: str = "") -> str:
     """去掉括号、城市名前缀和"景区/寺/公园"这类通用后缀后的名字主干："灵隐寺" → "灵隐"。
 
     城市名要去掉，否则"南京博物院"和"南京总统府"的主干都是"南京"，会被当成同一处。
     """
-    core = name.split("(")[0].split("（")[0].strip()
+    core = _base_name(name)
     if city and core.startswith(city):
         core = core[len(city):]
     for suffix in _GENERIC_SUFFIXES:
@@ -330,13 +335,16 @@ def _core_name(name: str, city: str = "") -> str:
 
 
 def same_place(first: str, second: str, city: str = "") -> bool:
-    """同一处地方的不同叫法：灵隐寺 / 灵隐飞来峰景区，故宫 / 故宫博物院。"""
+    """同一处地方的不同叫法：灵隐寺 / 灵隐飞来峰景区，故宫 / 故宫博物院。
+
+    括号里的分店名不参与比较，否则"四季民福烤鸭店(故宫店)"会被当成故宫。
+    """
     if not first or not second:
         return False
     if first == second:
         return True
     a, b = _core_name(first, city), _core_name(second, city)
-    return len(a) >= 2 and len(b) >= 2 and (a in second or b in first)
+    return len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first))
 
 
 def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results: list[WorkerResult]) -> tuple[PlaceSelection, list[str]]:
