@@ -4,6 +4,7 @@
     python scripts/eval_dialogues.py                 # 跑全部场景
     python scripts/eval_dialogues.py -k chengdu      # 只跑名字包含 chengdu 的场景
     python scripts/eval_dialogues.py --no-plan       # 不提交表单，只看路由和槽位
+    python scripts/eval_dialogues.py --repeat 3      # 每个场景跑 3 次，看稳定性（pass^3）
 
 账号从 .env 里的 AUTO_TEST_USERNAME / AUTO_TEST_PASSWORD 读取（允许以 "# " 注释形式出现），
 也可以用环境变量 EVAL_USERNAME / EVAL_PASSWORD 覆盖。
@@ -11,6 +12,13 @@
 每个场景声明期望：第一轮该走哪个动作、表单预填了哪些槽位、最终行程里必须出现/
 不能出现的文字。每份行程还要过一组质量底线（没有退回规则选点、没有误导性的空时段、
 晚餐人均不超过 400 元）。脚本逐条断言，最后打印通过率，并把完整输出写到 logs/eval_dialogues.json。
+
+失败按 ChinaTravel 的分层归类，分别给出通过率：
+- delivery：路由、预填、表单能否提交、有没有报错或退回规则选点——到底有没有交付一份行程
+- environment：行程里的地点、价格、营业时间对得上地点库（app/evaluation/plan_checks）
+- logic：用户约束和场景期望（天数、不去的地点、轻松的天、必须/不能出现的文字）
+模型输出有随机性，--repeat N 时同时给出 pass@1（平均单次通过率）和 pass^N
+（N 次全过的场景占比，参照 τ-bench），后者才说明"每次都靠得住"。
 """
 
 from __future__ import annotations
@@ -29,6 +37,12 @@ from typing import Any
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app.evaluation.plan_checks import check_plan  # noqa: E402
+from app.schemas.planning import ItineraryDay, TravelRequirement  # noqa: E402
+
+LAYERS = ("delivery", "environment", "logic")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -239,14 +253,28 @@ _PRICE = re.compile(r"人均 (\d+(?:\.\d+)?) 元")
 
 def plan_quality_failures(output: str) -> list[str]:
     failures = []
-    if "智能选点暂时不可用" in output:
-        failures.append("LLM 选点失败，退回了规则选点")
     if "没有第二个带证据的景点候选" in output:
         failures.append("出现了误导性的空时段文案")
     expensive = [float(value) for value in _PRICE.findall(output) if float(value) > MAX_DINNER_PRICE]
     if expensive:
         failures.append(f"晚餐人均超过 {MAX_DINNER_PRICE} 元：{expensive}")
     return failures
+
+
+def _structured_issues(events: list[dict[str, Any]], issues: dict[str, list[str]]) -> None:
+    """把结构化行程交给 plan_checks；规则选点兜底算没交付好。"""
+    output = _text_of(events)
+    if "智能选点暂时不可用" in output:
+        issues["delivery"].append("LLM 选点失败，退回了规则选点")
+    result = next((e["payload"].get("result") for e in events if e.get("type") == "result"), None)
+    if not isinstance(result, dict) or not result.get("itinerary"):
+        issues["delivery"].append("没有拿到结构化行程")
+        return
+    requirement = TravelRequirement(**result["requirement"])
+    itinerary = [ItineraryDay(**day) for day in result["itinerary"]]
+    for issue in check_plan(requirement, itinerary):
+        issues[issue.category].append(issue.message)
+    issues["logic"].extend(plan_quality_failures(output))
 
 
 def _text_of(events: list[dict[str, Any]]) -> str:
@@ -269,7 +297,7 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
         last_events = client.send(conversation_id, turn)
         transcript.append({"user": turn, "events": last_events})
 
-    failures: list[str] = []
+    issues: dict[str, list[str]] = {layer: [] for layer in LAYERS}
     # 只有规划表单算"进入规划"；线路 1 的 ReAct 也会发 tool_call（查资料），那仍是直接回答。
     tool_call = next(
         (
@@ -281,27 +309,27 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
     )
     route = "tool_call" if tool_call else "token"
     if route != scenario.expect_route:
-        failures.append(f"路由期望 {scenario.expect_route}，实际 {route}")
+        issues["delivery"].append(f"路由期望 {scenario.expect_route}，实际 {route}")
 
     output = _text_of(last_events)
     if tool_call is not None:
         prefill = tool_call.get("arguments", {}).get("initial_values", {})
         for key, expected in scenario.expect_prefill.items():
             if prefill.get(key) != expected:
-                failures.append(f"预填 {key} 期望 {expected!r}，实际 {prefill.get(key)!r}")
+                issues["delivery"].append(f"预填 {key} 期望 {expected!r}，实际 {prefill.get(key)!r}")
         if submit_plan:
             values = {**scenario.fill, **prefill}
             missing = [k for k in ("destination", "departure_date", "days") if k not in values]
             if missing:
-                failures.append(f"表单仍缺 {missing}，无法提交")
+                issues["delivery"].append(f"表单仍缺 {missing}，无法提交")
             else:
                 plan_events = client.submit_form(tool_call["call_id"], values)
                 transcript.append({"form": values, "events": plan_events})
                 errors = [e for e in plan_events if e.get("type") == "error"]
                 if errors:
-                    failures.append(f"规划报错：{errors[0].get('message')}")
+                    issues["delivery"].append(f"规划报错：{errors[0].get('message')}")
                 output = _text_of(plan_events)
-                failures.extend(plan_quality_failures(output))
+                _structured_issues(plan_events, issues)
                 for turn in scenario.revise:
                     revise_events = client.send(conversation_id, turn)
                     transcript.append({"user": turn, "events": revise_events})
@@ -309,24 +337,29 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
                         (e for e in revise_events if e.get("tool") == "collect_trip_requirements"), None
                     )
                     if form is None:
-                        failures.append(f"修改意见「{turn}」没有触发重新规划")
+                        issues["delivery"].append(f"修改意见「{turn}」没有触发重新规划")
                         break
                     replan = client.submit_form(form["call_id"], form["arguments"]["initial_values"])
                     transcript.append({"form": form["arguments"], "events": replan})
                     output = _text_of(replan)
-                    failures.extend(plan_quality_failures(output))
+                    # 只看最后一版：上一版的问题被改掉了才算修改生效
+                    issues = {"delivery": issues["delivery"], "environment": [], "logic": []}
+                    _structured_issues(replan, issues)
 
     if submit_plan or tool_call is None:
         for needle in scenario.must_contain:
             if needle not in output:
-                failures.append(f"输出缺少「{needle}」")
+                issues["logic"].append(f"输出缺少「{needle}」")
         for needle in scenario.must_not_contain:
             if needle in output:
-                failures.append(f"输出不应出现「{needle}」")
+                issues["logic"].append(f"输出不应出现「{needle}」")
 
+    failures = [f"[{layer}] {message}" for layer in LAYERS for message in issues[layer]]
     return {
         "name": scenario.name,
+        "plans": scenario.expect_route == "tool_call" and submit_plan,
         "passed": not failures,
+        "layers": {layer: not issues[layer] for layer in LAYERS},
         "failures": failures,
         "seconds": round(time.perf_counter() - started, 1),
         "output": output,
@@ -334,36 +367,71 @@ def run_scenario(client: Client, scenario: Scenario, submit_plan: bool) -> dict[
     }
 
 
+def summarize(results: list[dict[str, Any]], repeat: int) -> list[str]:
+    """总通过率 + 规划场景的分层通过率；重复跑时再给 pass^N。"""
+    def rate(count: int, total: int) -> str:
+        return f"{count}/{total} = {count / total:.0%}"
+
+    lines = [f"pass@1：{rate(sum(r['passed'] for r in results), len(results))}"]
+    plans = [r for r in results if r.get("plans")]
+    if plans:
+        layers = [r.get("layers", dict.fromkeys(LAYERS, False)) for r in plans]
+        delivered = [x for x in layers if x["delivery"]]
+        lines.append(
+            f"规划场景  交付 DR {rate(len(delivered), len(plans))}"
+            f" ｜ 环境 EPR {rate(sum(x['environment'] for x in delivered), len(plans))}"
+            f" ｜ 逻辑 LPR {rate(sum(x['logic'] for x in delivered), len(plans))}"
+            f" ｜ 最终 FPR {rate(sum(r['passed'] for r in plans), len(plans))}"
+        )
+    if repeat > 1:
+        by_name: dict[str, list[bool]] = {}
+        for result in results:
+            by_name.setdefault(result["name"], []).append(result["passed"])
+        stable = sum(all(runs) for runs in by_name.values())
+        lines.append(f"pass^{repeat}：{rate(stable, len(by_name))}")
+        flaky = [f"{name}({sum(runs)}/{len(runs)})" for name, runs in by_name.items() if 0 < sum(runs) < len(runs)]
+        if flaky:
+            lines.append("时好时坏：" + "、".join(flaky))
+    return lines
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default=os.environ.get("EVAL_BASE_URL", "http://127.0.0.1:18000"))
     parser.add_argument("-k", default="", help="只跑名字包含该子串的场景")
     parser.add_argument("--no-plan", action="store_true", help="不提交表单")
+    parser.add_argument("--repeat", type=int, default=1, help="每个场景重复跑几次")
     parser.add_argument("--timeout", type=float, default=300.0)
     args = parser.parse_args()
 
     client = Client(args.base_url, args.timeout)
     client.login()
     results = []
-    for scenario in scenarios():
-        if args.k and args.k not in scenario.name:
-            continue
-        try:
-            result = run_scenario(client, scenario, submit_plan=not args.no_plan)
-        except Exception as exc:  # 单个场景失败不影响其余场景
-            result = {"name": scenario.name, "passed": False, "failures": [f"{type(exc).__name__}: {exc}"]}
-        results.append(result)
-        mark = "PASS" if result["passed"] else "FAIL"
-        print(f"[{mark}] {scenario.name} ({result.get('seconds', '-')}s)")
-        for failure in result["failures"]:
-            print(f"       - {failure}")
+    for trial in range(1, args.repeat + 1):
+        for scenario in scenarios():
+            if args.k and args.k not in scenario.name:
+                continue
+            try:
+                result = run_scenario(client, scenario, submit_plan=not args.no_plan)
+            except Exception as exc:  # 单个场景失败不影响其余场景
+                result = {"name": scenario.name, "passed": False, "plans": scenario.expect_route == "tool_call",
+                          "failures": [f"[delivery] {type(exc).__name__}: {exc}"]}
+            result["trial"] = trial
+            results.append(result)
+            mark = "PASS" if result["passed"] else "FAIL"
+            prefix = f"#{trial} " if args.repeat > 1 else ""
+            print(f"{prefix}[{mark}] {scenario.name} ({result.get('seconds', '-')}s)")
+            for failure in result["failures"]:
+                print(f"       - {failure}")
 
     report = ROOT / "logs" / "eval_dialogues.json"
     report.parent.mkdir(exist_ok=True)
     report.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-    passed = sum(r["passed"] for r in results)
-    print(f"\n{passed}/{len(results)} 通过，完整输出：{report}")
-    return 0 if passed == len(results) else 1
+    print()
+    for line in summarize(results, args.repeat):
+        print(line)
+    print(f"完整输出：{report}")
+    return 0 if all(r["passed"] for r in results) else 1
 
 
 if __name__ == "__main__":
