@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.places.catalog import straight_line_km
+from app.places.catalog import named_by, straight_line_km
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -262,6 +262,7 @@ async def select_places_with_llm(
                 "候选里的 position 是 [纬度, 经度]，可以用来判断远近：晚餐选在所选景点附近的，"
                 "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个；"
                 "同一处地方的不同叫法（如灵隐寺和灵隐飞来峰景区）只选一个。"
+                "需求里 must_visit 是用户点名要去的地点，候选里有就必须选上。"
             ),
         },
         {
@@ -347,6 +348,33 @@ def same_place(first: str, second: str, city: str = "") -> bool:
     return len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first))
 
 
+def _must_visit_options(results: list[WorkerResult], worker: str, requirement: TravelRequirement) -> list[CandidateOption]:
+    """候选里对得上用户点名要去的地点，每个叫法只取最热门的一个。"""
+    found: list[CandidateOption] = []
+    for term in requirement.must_visit:
+        match = next((option for option in _candidates(results, worker, requirement)
+                      if named_by(option.name, [term])), None)
+        if match is not None and match not in found:
+            found.append(match)
+    return found
+
+
+def _with_must_visit(
+    items: list[SelectedPlace], options: list[CandidateOption], names: dict[str, str], limit: int, city: str
+) -> list[SelectedPlace]:
+    """模型漏选了用户点名的地点时补进去，挤掉排在最后的；已选了同一处的别名就不重复补。"""
+    picked = [names.get(item.id, "") for item in items]
+    missing = [
+        SelectedPlace(id=option.id)
+        for option in options
+        if not any(same_place(option.name, name, city) for name in picked)
+    ]
+    if not missing:
+        return items
+    named = {option.id for option in options}
+    return ([item for item in items if item.id in named] + missing + [item for item in items if item.id not in named])[:limit]
+
+
 def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results: list[WorkerResult]) -> tuple[PlaceSelection, list[str]]:
     """丢掉不存在或重复的 id（含同一处地方的不同叫法）、超出容量的景点和越界的 preferred_day。"""
     warnings: list[str] = []
@@ -373,11 +401,20 @@ def _sanitize(selection: PlaceSelection, requirement: TravelRequirement, results
         return kept[:limit]
 
     hotel_ids = {option.id for option in _options(results, "hotel")}
+    attraction_limit = sum(day_capacities(requirement))
     return (
         PlaceSelection(
             hotel_id=selection.hotel_id if selection.hotel_id in hotel_ids else None,
-            attractions=clean(selection.attractions, "attractions", sum(day_capacities(requirement))),
-            dinners=clean(selection.dinners, "dinners", requirement.days),
+            attractions=_with_must_visit(
+                clean(selection.attractions, "attractions", attraction_limit),
+                _must_visit_options(results, "attractions", requirement),
+                names, attraction_limit, requirement.destination,
+            ),
+            dinners=_with_must_visit(
+                clean(selection.dinners, "dinners", requirement.days),
+                _must_visit_options(results, "food", requirement),
+                names, requirement.days, requirement.destination,
+            ),
         ),
         warnings,
     )
@@ -710,6 +747,13 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
             names = "、".join(slot.title for slot in visited)
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天的{names}相距太远，路上估计要 {estimated} 分钟以上。"))
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    for term in requirement.must_visit:
+        if any(named_by(title, [term]) for title in titles):
+            continue
+        known = any(named_by(option.name, [term]) for worker in ("attractions", "food") for option in _options(results, worker))
+        message = f"你点名要去的{term}没有排进行程，请按 id 选上。" if known else f"没查到{term}的资料，没能排进行程，可以换个叫法再试。"
+        violations.append(Violation(code="must_visit", message=message))
     return violations
 
 

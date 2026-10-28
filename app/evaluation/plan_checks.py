@@ -16,7 +16,7 @@ from datetime import timedelta
 from typing import Literal
 
 from app.agents.itinerary_planner import same_place
-from app.places.catalog import PlaceCatalog, get_place_catalog
+from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement
 
 Category = Literal["environment", "logic"]
@@ -105,6 +105,11 @@ def check_plan(
         sights = [slot for slot in places if slot.period in _SIGHT_PERIODS]
         if day.day in requirement.relaxed_days and len(sights) > 1:
             logic(f"第{day.day}天要求轻松，却排了 {len(sights)} 个景点")
+
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    for term in requirement.must_visit:
+        if not any(named_by(title, [term]) for title in titles):
+            logic(f"用户点名要去「{term}」，行程里没有")
 
     if city in catalog.cities():
         issues.extend(_environment_issues(city, itinerary, catalog))

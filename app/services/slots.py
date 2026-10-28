@@ -90,6 +90,7 @@ def apply_slot_update(
         if len(destination) <= 80 and (said_by_user or accepted_suggestion):
             if destination != slots.destination:
                 # 换了城市就是另一趟行程，上一版的修改意见不再适用。
+                values["must_visit"] = []
                 values["avoid_places"] = []
                 values["relaxed_days"] = []
             values["destination"] = destination
@@ -138,6 +139,17 @@ def apply_slot_update(
     if len(kept_avoid) < len(avoid):
         dropped.append("avoid_places")
     values["avoid_places"] = list(dict.fromkeys([*values.get("avoid_places", []), *kept_avoid]))[:_MAX_LIST_ITEMS]
+
+    # 点名要去的地点同样要用户亲口说过；后来又说不去的，以不去为准。
+    must = [place.strip() for place in update.must_visit if place.strip()]
+    kept_must = [place for place in must if len(place) <= 30 and _mentions_place(user_text, place)]
+    if len(kept_must) < len(must):
+        dropped.append("must_visit")
+    merged = list(dict.fromkeys([*values.get("must_visit", []), *kept_must]))
+    values["must_visit"] = [
+        place for place in merged
+        if not any(place in avoided or avoided in place for avoided in values["avoid_places"])
+    ][:_MAX_LIST_ITEMS]
 
     if update.relaxed_days:
         if _RELAXED_CUE.search(user_text):

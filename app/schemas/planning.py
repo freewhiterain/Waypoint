@@ -40,7 +40,8 @@ class TravelRequirement(BaseModel):
     transport_preferences: list[str] = Field(default_factory=list)
     accommodation_preferences: list[str] = Field(default_factory=list)
     food_preferences: list[str] = Field(default_factory=list)
-    # 看过上一版行程后提的修改，作为排程的硬约束。
+    # 用户点名要去的地点，以及看过上一版行程后提的修改，都是排程的硬约束。
+    must_visit: list[str] = Field(default_factory=list)
     avoid_places: list[str] = Field(default_factory=list)
     relaxed_days: list[int] = Field(default_factory=list)
 

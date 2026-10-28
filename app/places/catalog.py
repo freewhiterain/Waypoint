@@ -206,12 +206,23 @@ class PlaceCatalog:
             if any(word in "".join(requirement.styles) for word in ("夜景", "夜游", "夜市", "夜生活", "灯光")):
                 night_extra = night[: requirement.days + 1]
             keywords = list(requirement.styles)
+        # 用户点名要去的放最前面，不占名额；夜景点也照样给（排程会放进夜间时段）。
+        named = [record for record in self.places(requirement.destination, category)
+                 if named_by(record.name, requirement.must_visit)]
+        records = [record for record in records if record not in named]
+        night_extra = [record for record in night_extra if record not in named]
         matched = [record for record in records if _matches(record, keywords)]
         # 偏好命中的最多占一半，其余仍按热门程度取，避免"喜欢历史"就排满冷门古迹。
         preferred = matched[: limit // 2]
         chosen = {record.id for record in preferred}
         rest = [record for record in records if record.id not in chosen][: limit - len(preferred)]
-        return preferred + rest + night_extra
+        return named + preferred + rest + night_extra
+
+
+def named_by(name: str, terms: list[str]) -> bool:
+    """地点名和用户说的叫法对得上："洪崖洞" ↔ "洪崖洞民俗风貌区"，"熊猫基地"也能对上全名里的片段。"""
+    base = name.split("(")[0].split("（")[0]
+    return any(term and len(term) >= 2 and (term in base or base in term) for term in terms)
 
 
 def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
