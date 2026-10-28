@@ -383,6 +383,9 @@ def test_a_specific_dish_in_interests_counts_as_food_interest():
 
     assert wants_lunch(requirement(styles=["火锅", "夜景"]))
     assert not wants_lunch(requirement(styles=["夜景"], food_preferences=["不吃辣"]))
+    # 模型把想吃的东西记进口味时同样算；忌口不算
+    assert wants_lunch(requirement(styles=["夜景"], food_preferences=["火锅"]))
+    assert not wants_lunch(requirement(food_preferences=["不要火锅", "少吃烧烤"]))
 
 
 @pytest.mark.asyncio

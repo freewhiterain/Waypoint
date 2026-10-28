@@ -530,7 +530,10 @@ def wants_lunch(requirement: TravelRequirement) -> bool:
     styles = "".join(requirement.styles)
     if any(word in styles for word in (*_FOOD_INTEREST_WORDS, *_FOOD_STYLE_WORDS)):
         return True
-    return any(word in "".join(requirement.food_preferences) for word in _FOOD_INTEREST_WORDS)
+    # 模型有时把"想吃火锅"记进口味而不是兴趣；"不吃辣""不要火锅"这类忌口不算想吃。
+    # 单个"吃"字在口味里太宽（"不吃辣"也有），这里只认具体吃食。
+    wanted = "".join(item for item in requirement.food_preferences if not item.startswith(("不", "忌", "别", "少")))
+    return any(word in wanted for word in (*_FOOD_INTEREST_WORDS, *_FOOD_STYLE_WORDS[1:]))
 
 
 def _open_for_lunch(option: CandidateOption) -> bool:
