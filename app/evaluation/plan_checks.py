@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
-from app.agents.itinerary_planner import same_place
+from app.agents.itinerary_planner import SIGHT_PERIOD_WINDOWS, same_place
 from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement
 
@@ -33,12 +33,11 @@ class PlanIssue:
         return f"[{self.category}] {self.message}"
 
 
-# 每个时段至少要覆盖的营业区间（时:分 → 分钟）。景点只要求开门早于时段中段、
-# 关门晚于时段结束前；餐厅要覆盖正常用餐时间。
+# 每个时段对营业时间的要求：(最晚几点开门, 最早几点关门)。景点沿用排程的标准，
+# 餐厅要覆盖正常用餐时间，夜间要开到晚上。
 _PERIOD_NEEDS = {
-    "morning": (10 * 60, 11 * 60 + 30),
+    **SIGHT_PERIOD_WINDOWS,
     "lunch": (12 * 60, 12 * 60 + 30),
-    "afternoon": (14 * 60, 16 * 60),
     "evening": (18 * 60, 19 * 60),
     "night": (20 * 60, 20 * 60 + 30),
 }

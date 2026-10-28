@@ -45,7 +45,9 @@ MAX_HOP_MINUTES = 75
 _PROXIMITY_COST = {"same_district": 20, "unknown": 35, "different_district": 50}
 _OPENING_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至到]\s*(\d{1,2}):(\d{2})")
 # 时段与开放时间的最低要求：上午 11 点前要开门，下午 15 点后才关门。
-_PERIOD_WINDOWS = {"morning": (11 * 60, None), "afternoon": (None, 15 * 60)}
+# 景点时段对开放时间的要求：(最晚几点开门, 最早几点关门)。下午 15 点才开门还算下午，再晚就是傍晚了。
+# 评测的 plan_checks 用同一份标准。
+SIGHT_PERIOD_WINDOWS = {"morning": (11 * 60, 11 * 60 + 30), "afternoon": (15 * 60, 15 * 60)}
 # 用户表达了对吃的兴趣时，每天在上午景点附近加一顿午餐（默认只排晚餐）。
 # food_preferences 里不能用单字"吃"匹配：常见的"不吃辣"也会命中。兴趣（styles）里没有这种否定说法，
 # 而且模型常把"想吃火锅"记成"火锅"而不是"美食"，所以兴趣里带"吃"或具体吃食也算。
@@ -665,7 +667,7 @@ def _fits(option: CandidateOption, period: str) -> bool:
     window = _opening_minutes(str(option.attributes.get("opening_hours") or ""))
     if window is None:
         return True
-    latest_open, earliest_close = _PERIOD_WINDOWS[period]
+    latest_open, earliest_close = SIGHT_PERIOD_WINDOWS[period]
     return (latest_open is None or window[0] <= latest_open) and (earliest_close is None or window[1] >= earliest_close)
 
 
@@ -726,16 +728,17 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
     for day in itinerary:
         for slot in day.slots:
             window = _opening_minutes(slot.opening_window)
-            limits = _PERIOD_WINDOWS.get(slot.period)
+            limits = SIGHT_PERIOD_WINDOWS.get(slot.period)
             if window is None or limits is None:
                 continue
             latest_open, earliest_close = limits
+            label = "上午" if slot.period == "morning" else "下午"
             if latest_open is not None and window[0] > latest_open:
                 violations.append(Violation(code="opening_hours",
-                                            message=f"第{day.day}天上午的{slot.title}开门太晚（{slot.opening_window}）。"))
+                                            message=f"第{day.day}天{label}的{slot.title}开门太晚（{slot.opening_window}）。"))
             if earliest_close is not None and window[1] < earliest_close:
                 violations.append(Violation(code="opening_hours",
-                                            message=f"第{day.day}天下午的{slot.title}关门太早（{slot.opening_window}）。"))
+                                            message=f"第{day.day}天{label}的{slot.title}关门太早（{slot.opening_window}）。"))
         travel = sum(slot.travel_minutes or 0 for slot in day.slots)
         if travel > MAX_DAILY_TRAVEL_MINUTES:
             violations.append(Violation(code="daily_travel",
