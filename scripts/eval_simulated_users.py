@@ -126,7 +126,9 @@ def next_user_line(llm: Any, user: SimulatedUser, history: list[tuple[str, str]]
 _NOTES_PROMPT = """助手弹出了行程表单，目的地、日期、天数已经填好，最下面有一栏“还有什么要求？（可选）”。
 你的目标：{goal}
 到目前为止你在对话里说过的话：{said}
-目标里还有你没说过的要求（想去的地方、忌口、同行的人、节奏等）就写进这一栏，用一句话；都说过了或没有就只输出“无”。"""
+逐条对照目标：想去的具体地方、忌口、同行的人、节奏、兴趣。目标里有、但你在对话里还没说过的，写进这一栏，用一句话。
+只能写目标里明确有的内容，不要编造（目标没提老人就不要写老人，没提忌口就不要写忌口）。
+确实都说过了才只输出“无”。"""
 
 
 def form_notes(llm: Any, user: SimulatedUser, history: list[tuple[str, str]]) -> str:
@@ -180,8 +182,12 @@ def run_user(client: Client, llm: Any, user: SimulatedUser) -> dict[str, Any]:
         # 用户在表单里会把错的改对、缺的补上：按目标提交，预填错了记一笔理解问题
         prefill = form.get("arguments", {}).get("initial_values", {})
         values = {"destination": user.destination, "days": user.days, "departure_date": user.departure_date.isoformat()}
+        # 预填错了才算理解问题；用户还没说到正确的目的地（比如说了杭州、正要改主意）时
+        # 预填成杭州是对的，用户会在表单里改。
+        said = "".join(text for role, text in history if role == "user")
         for key, value in values.items():
-            if key in prefill and prefill[key] != value:
+            stated = user.destination in said if key == "destination" else True
+            if key in prefill and prefill[key] != value and stated:
                 issues["logic"].append(f"表单预填 {key}={prefill[key]!r}，用户要的是 {value!r}")
         notes = form_notes(llm, user, history)
         if notes:
