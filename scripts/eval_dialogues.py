@@ -279,6 +279,10 @@ def _structured_issues(events: list[dict[str, Any]], issues: dict[str, list[str]
         return
     requirement = TravelRequirement(**result["requirement"])
     itinerary = [ItineraryDay(**day) for day in result["itinerary"]]
+    # 每个时段都是"自由活动/自由安排晚餐"的行程等于没交付：检查器挑不出错，但用户拿到的是空的。
+    if not any(not slot.title.startswith("自由") and "分区自由活动" not in slot.title
+               for day in itinerary for slot in day.slots):
+        issues["delivery"].append("行程里没有任何具体地点")
     for issue in check_plan(requirement, itinerary):
         issues[issue.category].append(issue.message)
     issues["logic"].extend(plan_quality_failures(output))

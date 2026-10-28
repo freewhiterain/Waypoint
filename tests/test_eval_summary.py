@@ -35,3 +35,16 @@ def test_pass_hat_k_needs_every_trial_to_pass():
 
     assert "pass^2：1/2 = 50%" in lines
     assert lines[-1] == "时好时坏：b(1/2)"
+
+
+def test_a_plan_made_only_of_free_time_counts_as_not_delivered():
+    events = [{"type": "result", "payload": {"result": {
+        "requirement": {"destination": "西安", "departure_date": "2026-11-03", "days": 1},
+        "itinerary": [{"day": 1, "date": "2026-11-03", "slots": [
+            {"period": "morning", "title": "西安分区自由活动"}, {"period": "evening", "title": "自由安排晚餐"}]}],
+    }}}]
+    issues = {layer: [] for layer in eval_dialogues.LAYERS}
+
+    eval_dialogues._structured_issues(events, issues)
+
+    assert issues["delivery"] == ["行程里没有任何具体地点"]
