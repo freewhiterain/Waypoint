@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
@@ -60,6 +62,30 @@ class TavilySearchAdapter:
         ]
 
 
+class _Throttle:
+    """进程内串行、两次请求至少间隔 interval 秒。
+
+    一次规划里景点/美食/住宿子 Agent 并发搜索，十来个请求同时打到 SearXNG，
+    上游的搜狗、夸克几乎立刻弹验证码并被 SearXNG 暂停很久。排队慢一点，换来能用。
+    """
+
+    def __init__(self) -> None:
+        self._lock: asyncio.Lock | None = None
+        self._last = 0.0
+
+    async def wait(self, interval: float) -> None:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            delay = self._last + interval - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._last = time.monotonic()
+
+
+_searxng_throttle = _Throttle()
+
+
 class SearxngSearchAdapter:
     """自建 SearXNG 的 JSON 接口（需要在 SearXNG 设置里开启 json 格式）。免费、无额度限制。"""
 
@@ -79,6 +105,7 @@ class SearxngSearchAdapter:
             params["engines"] = engines
 
         async def operation():
+            await _searxng_throttle.wait(settings.searxng_min_interval_seconds)
             async with httpx.AsyncClient(timeout=settings.external_timeout_seconds, trust_env=False) as client:
                 response = await client.get(f"{self.base_url}/search", params=params)
                 response.raise_for_status()

@@ -1,5 +1,7 @@
 """联网搜索降级链：Tavily → SearXNG；没有搜索 MCP 时直接给子 Agent 用。"""
 
+import asyncio
+
 import pytest
 
 from app.agents.subagents.tools import build_subagent_tools
@@ -140,3 +142,15 @@ async def test_searxng_uses_preferred_engines_and_falls_back_to_defaults_when_th
 
     assert calls == ["sogou,quark", None]
     assert [item.content for item in results] == ["西安 兵马俑"]
+
+
+@pytest.mark.asyncio
+async def test_searxng_requests_are_spaced_out(monkeypatch):
+    import time
+
+    throttle = search_module._Throttle()
+    started = time.monotonic()
+
+    await asyncio.gather(*(throttle.wait(0.05) for _ in range(3)))
+
+    assert time.monotonic() - started >= 0.1

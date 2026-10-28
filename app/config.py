@@ -97,6 +97,8 @@ class Settings(BaseSettings):
     # 指定 SearXNG 用哪些引擎。默认组合里谷歌常被限流、必应对中文旅游查询结果很差
     # （"兵马俑 门票"会搜出无关网页），搜狗和夸克的中文结果最相关。留空则用 SearXNG 自己的默认。
     searxng_engines: str = Field(default="sogou,quark", alias="SEARXNG_ENGINES")
+    # 两次 SearXNG 请求的最小间隔：并发打过去会让上游引擎弹验证码、被暂停。
+    searxng_min_interval_seconds: float = Field(default=1.0, alias="SEARXNG_MIN_INTERVAL_SECONDS")
     mcp_weather_url: str = Field(default="", alias="MCP_WEATHER_URL")
     mcp_search_url: str = Field(default="", alias="MCP_SEARCH_URL")
     external_timeout_seconds: float = Field(default=10.0, alias="EXTERNAL_TIMEOUT_SECONDS")
