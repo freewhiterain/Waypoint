@@ -105,3 +105,20 @@ def get_llm(temperature: float | None = None) -> StructuredChatOpenAI:
         http_async_client=http_async_client,
         extra_body=extra_body or None,
     )
+
+
+def describe_llm_failure(exc: BaseException) -> str:
+    """把模型调用异常翻译成给用户看的一句话：余额、密钥、限流、网络分别说清楚。"""
+    import openai
+
+    if isinstance(exc, openai.APIStatusError):
+        if exc.status_code == 402:
+            return "模型服务余额不足，暂时无法调用"
+        if exc.status_code in (401, 403):
+            return "模型服务的密钥无效"
+        if exc.status_code == 429:
+            return "模型服务当前繁忙"
+        return "模型服务暂时出错"
+    if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError)):
+        return "连不上模型服务"
+    return "模型暂时没有给出有效结果"

@@ -24,6 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.llm import describe_llm_failure
 from app.places.catalog import named_by, straight_line_km
 from app.schemas.planning import (
     CandidateOption,
@@ -47,6 +48,8 @@ _OPENING_PATTERN = re.compile(r"(\d{1,2}):(\d{2})\s*[-~至到]\s*(\d{1,2}):(\d{2
 # 时段与开放时间的最低要求：上午 11 点前要开门，下午 15 点后才关门。
 # 景点时段对开放时间的要求：(最晚几点开门, 最早几点关门)。下午 15 点才开门还算下午，再晚就是傍晚了。
 # 评测的 plan_checks 用同一份标准。
+# 选点退回规则时附带的原因（余额不足、连不上……），渲染时并进"智能选点暂时不可用"的提示。
+FALLBACK_REASON_PREFIX = "itinerary_selection_fallback_reason:"
 SIGHT_PERIOD_WINDOWS = {"morning": (11 * 60, 11 * 60 + 30), "afternoon": (15 * 60, 15 * 60)}
 # 用户表达了对吃的兴趣时，每天在上午景点附近加一顿午餐（默认只排晚餐）。
 # food_preferences 里不能用单字"吃"匹配：常见的"不吃辣"也会命中。兴趣（styles）里没有这种否定说法，
@@ -795,6 +798,7 @@ async def plan_itinerary(
             except Exception as exc:
                 app_logger.warning(f"LLM 选点失败，改用规则选点: {type(exc).__name__}: {exc}")
                 warnings.append("itinerary_selection_fallback:llm_failed")
+                warnings.append(f"{FALLBACK_REASON_PREFIX}{describe_llm_failure(exc)}")
                 llm = None
         by_rules = selection is None
         if by_rules:

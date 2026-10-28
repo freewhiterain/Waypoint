@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.rag.local_knowledge import get_local_knowledge_service
 from app.config import settings
+from app.core.llm import describe_llm_failure
 from app.utils.logger import app_logger
 
 
@@ -37,6 +38,6 @@ async def answer_open_question(query: str) -> str:
         return response.content
     except Exception as exc:
         app_logger.warning(f"开放问答 LLM 组织失败，退回证据摘要: {type(exc).__name__}: {exc}")
-        lines = ["为你找到以下相关资料：", ""]
+        lines = [f"（{describe_llm_failure(exc)}，下面是查到的原始资料，没有经过整理。）", ""]
         lines.extend(f"- {item.content}（来源：{item.source}）" for item in evidence[:4])
         return "\n".join(lines)

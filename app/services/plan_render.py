@@ -13,6 +13,8 @@ _WARNING_TEXT = {
     "planning_degraded:provider_degraded": "部分信息来源不可用，行程基于现有资料生成。",
     "itinerary_selection_fallback:llm_failed": "智能选点暂时不可用，本次按固定规则选点。",
 }
+_FALLBACK_CODE = "itinerary_selection_fallback:llm_failed"
+_FALLBACK_REASON = "itinerary_selection_fallback_reason:"
 _NO_EVIDENCE = re.compile(r"^No (?:evidence is available|provider returned evidence) for (\w+)\.$")
 _MAX_USER_WARNINGS = 6
 # 子 Agent 模型写的备注（"证据未提供……"）每份行程能有七八条，读起来像审计日志，只留几条。
@@ -26,8 +28,13 @@ def user_facing_warnings(warnings: list[str]) -> list[str]:
     """
     known: list[str] = []
     notes: list[str] = []
+    reason = next((w[len(_FALLBACK_REASON):] for w in warnings if w.startswith(_FALLBACK_REASON)), None)
     for warning in warnings:
+        if warning.startswith(_FALLBACK_REASON):
+            continue
         text = _WARNING_TEXT.get(warning)
+        if warning == _FALLBACK_CODE and reason:
+            text = f"智能选点暂时不可用（{reason}），本次按固定规则选点。"
         if text is None and warning.startswith("itinerary_constraint:"):
             text = warning.split(":", 2)[-1]
         if text is None and (match := _NO_EVIDENCE.match(warning)):
