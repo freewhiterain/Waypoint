@@ -164,7 +164,9 @@ def scenarios() -> list[Scenario]:
             turns=[f"帮我规划成都两天的行程，{soon}出发"],
             revise=["把熊猫基地换成别的，第二天轻松一点"],
             expect_prefill={"destination": "成都", "days": 2, "departure_date": soon},
-            must_contain=["第2天", "轻松"],
+            # "第二天轻松"由 plan_checks 按结构判定（relaxed_days 那天最多一个景点）；
+            # 不再匹配"轻松"二字，模型写成"放松"也是对的。
+            must_contain=["第2天"],
             must_not_contain=["熊猫", "第3天"],
         ),
         Scenario(
