@@ -414,3 +414,23 @@ async def test_a_restaurant_that_closes_in_the_afternoon_is_never_dinner():
     itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
 
     assert itinerary[0].slots[-1].title == "小吃"
+
+
+@pytest.mark.asyncio
+async def test_two_branches_of_one_chain_are_not_both_scheduled():
+    results = chengdu_results(LEGS)
+    food = next(item for item in results if item.worker == "food")
+    food.options[:] = [
+        CandidateOption(id="a", name="盛天毛血旺(来福士店)", category="food", description="d", evidence_ids=["e"]),
+        CandidateOption(id="b", name="盛天毛血旺(国泰广场店)", category="food", description="d", evidence_ids=["e"]),
+        CandidateOption(id="c", name="杨记隆府", category="food", description="d", evidence_ids=["e"]),
+    ]
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="a"), SelectedPlace(id="b")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    dinners = [day.slots[-1].title for day in itinerary]
+    assert dinners[0].startswith("盛天毛血旺") and dinners[1] == "杨记隆府"

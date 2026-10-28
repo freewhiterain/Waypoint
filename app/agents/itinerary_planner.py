@@ -592,6 +592,13 @@ def build_itinerary(
     dinner_pool = [item.id for item in selection.dinners if item.id in open_for_dinner]
     backup_dinners = [place_id for place_id in open_for_dinner if place_id not in dinner_pool]
     used_dinners: set[str] = set()
+    food_names = {option.id: option.name for option in _options(results, "food")}
+
+    def eat_at(place_id: str) -> None:
+        """记下吃过的餐厅；同一家连锁的其他分店（括号外名字相同）也不再排。"""
+        base = _base_name(food_names.get(place_id, ""))
+        used_dinners.add(place_id)
+        used_dinners.update(other for other, name in food_names.items() if base and _base_name(name) == base)
     night_options = {
         option.id: option
         for option in _options(results, "attractions")
@@ -620,7 +627,7 @@ def build_itinerary(
             if period == "afternoon" and previous is not None and periods.get("morning") is not None:
                 lunch_id = _pick_nearby(lunch_pool, used_dinners, previous, costs, MAX_LUNCH_MINUTES)
                 if lunch_id is not None:
-                    used_dinners.add(lunch_id)
+                    eat_at(lunch_id)
                     slots.append(_slot("lunch", options[lunch_id], costs.minutes(previous, lunch_id)))
                     previous = lunch_id
             if option is not None:
@@ -644,7 +651,7 @@ def build_itinerary(
             backup_dinners, used_dinners, previous, costs
         )
         if dinner_id is not None:
-            used_dinners.add(dinner_id)
+            eat_at(dinner_id)
             slots.append(_slot("evening", options[dinner_id], costs.minutes(previous, dinner_id)))
             previous = dinner_id
         else:
