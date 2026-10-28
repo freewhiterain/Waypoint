@@ -101,3 +101,42 @@ def test_places_the_user_named_get_their_own_search():
 
     assert web_search_queries(payload)[-1] == "大理 喜洲古镇"
     assert "大理 喜洲古镇" not in web_search_queries({**payload, "category": "weather"})
+
+
+@pytest.mark.asyncio
+async def test_searxng_uses_preferred_engines_and_falls_back_to_defaults_when_they_are_blocked(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class Client:
+        def __init__(self, **_):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def get(self, _url, params):
+            calls.append(params.get("engines"))
+            # 搜狗被验证码暂停：没有结果；默认引擎有结果
+            results = [] if params.get("engines") else [{"content": "西安 兵马俑", "url": "https://x.test", "title": "t"}]
+            return Response({"results": results})
+
+    monkeypatch.setattr(search_module.httpx, "AsyncClient", Client)
+    adapter = search_module.SearxngSearchAdapter(base_url="http://s", engines="sogou,quark")
+
+    results = await adapter.search("西安 兵马俑")
+
+    assert calls == ["sogou,quark", None]
+    assert [item.content for item in results] == ["西安 兵马俑"]

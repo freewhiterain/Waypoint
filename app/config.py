@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
     # 自建 SearXNG 元搜索（如 http://127.0.0.1:8080），Tavily 没配或额度用完时作为联网搜索兜底。
     searxng_url: str = Field(default="", alias="SEARXNG_URL")
+    # 指定 SearXNG 用哪些引擎。默认组合里谷歌常被限流、必应对中文旅游查询结果很差
+    # （"兵马俑 门票"会搜出无关网页），搜狗和夸克的中文结果最相关。留空则用 SearXNG 自己的默认。
+    searxng_engines: str = Field(default="sogou,quark", alias="SEARXNG_ENGINES")
     mcp_weather_url: str = Field(default="", alias="MCP_WEATHER_URL")
     mcp_search_url: str = Field(default="", alias="MCP_SEARCH_URL")
     external_timeout_seconds: float = Field(default=10.0, alias="EXTERNAL_TIMEOUT_SECONDS")
