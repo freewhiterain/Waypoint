@@ -88,3 +88,13 @@ def test_prices_and_hours_written_in_descriptions_must_match_the_fields():
 
     assert [issue.category for issue in issues] == ["environment", "environment"]
     assert all("某饭馆" in issue.message for issue in issues)
+
+
+def test_a_restaurant_named_after_a_landmark_is_not_a_second_visit():
+    requirement = TravelRequirement(destination="上海", departure_date=START, days=2)
+    plan = [
+        day(1, slot("morning", "上海博物馆"), slot("evening", "南京东路外滩酒店·环球西餐厅(外滩店)")),
+        day(2, slot("morning", "外滩"), slot("evening", "王宝和大酒店")),
+    ]
+
+    assert check_plan(requirement, plan, Catalog()) == []

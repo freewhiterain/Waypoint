@@ -46,6 +46,7 @@ _WINDOW = re.compile(r"(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})")
 _STATED_PRICE = re.compile(r"(?:门票|人均)\s*(\d+(?:\.\d+)?)\s*元")
 _PLACEHOLDER_PREFIXES = ("自由", )
 _SIGHT_PERIODS = ("morning", "afternoon")
+_MEAL_PERIODS = ("lunch", "evening")
 
 
 def _is_placeholder(title: str, city: str) -> bool:
@@ -86,15 +87,17 @@ def check_plan(
         if day.date != expected:
             logic(f"第{day.day}天日期 {day.date}，应为 {expected}")
 
-    visited: list[tuple[int, str]] = []
+    # 餐厅和景点分开比：店名里常带地标（"南京东路外滩酒店·环球西餐厅"），不能算去了两次外滩。
+    visited: list[tuple[int, bool, str]] = []
     for day in itinerary:
         places = [slot for slot in day.slots if not _is_placeholder(slot.title, city)]
         for slot in places:
-            for seen_day, seen in visited:
-                if same_place(slot.title, seen, city):
+            meal = slot.period in _MEAL_PERIODS
+            for seen_day, seen_meal, seen in visited:
+                if seen_meal == meal and same_place(slot.title, seen, city):
                     logic(f"「{slot.title}」第{seen_day}天已经去过，第{day.day}天又排了")
                     break
-            visited.append((day.day, slot.title))
+            visited.append((day.day, meal, slot.title))
             for avoided in requirement.avoid_places:
                 if avoided in slot.title or same_place(slot.title, avoided, city):
                     logic(f"用户说不去「{avoided}」，第{day.day}天仍排了「{slot.title}」")
