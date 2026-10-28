@@ -17,6 +17,7 @@ import type {
   WorkerName,
 } from "@/api/types";
 import { todayIso } from "@/lib/format";
+import { hasPlaces } from "@/lib/places";
 
 export interface Activity {
   id: string;
@@ -164,7 +165,9 @@ function fromHistory(message: HistoryMessage): ChatMessage | null {
   for (const step of extra.react_steps || []) {
     chat.activities.push({ id: uid(), tool: step.tool, arguments: step.arguments || {}, status: step.status });
   }
-  if (extra.assistant_result?.itinerary) chat.plan = extra.assistant_result as TravelPlanDraft;
+  if (extra.assistant_result?.itinerary && hasPlaces(extra.assistant_result)) {
+    chat.plan = extra.assistant_result as TravelPlanDraft;
+  }
   return chat;
 }
 
@@ -415,7 +418,7 @@ export const useChat = create<State>((set, get) => {
               applyResearch(planId, event);
             } else if (event.type === "result") {
               const plan = (event.payload?.result || event.result) as TravelPlanDraft | undefined;
-              if (plan?.itinerary) {
+              if (plan?.itinerary && hasPlaces(plan)) {
                 patchMessage(planId, (m) => ({ ...m, plan }));
                 set({ activePlan: plan });
               }

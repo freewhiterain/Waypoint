@@ -52,7 +52,46 @@ def user_facing_warnings(warnings: list[str]) -> list[str]:
     return (known + notes[:_MAX_MODEL_NOTES])[:_MAX_USER_WARNINGS]
 
 
+def has_concrete_places(draft: TravelPlanDraft) -> bool:
+    """行程里至少有一个具体地点；每个时段都是"自由活动/自由安排晚餐"时等于没排出来。"""
+    return any(
+        not slot.title.startswith("自由") and not slot.title.endswith("分区自由活动")
+        for day in draft.itinerary
+        for slot in day.slots
+    )
+
+
+def _render_unplannable(draft: TravelPlanDraft) -> str:
+    """一个具体地点都没查到时，不拿一份每天"自由活动"的空行程充数，直接说明原因和出路。"""
+    from app.places.catalog import get_place_catalog
+
+    requirement = draft.requirement
+    covered = "、".join(get_place_catalog().cities())
+    lines = [
+        f"# {requirement.destination}{requirement.days}日行程：这次没能排出来",
+        "",
+        f"联网搜索这次没有查到{requirement.destination}具体的景点和餐厅资料，硬排只会是每天“自由活动”，所以先不给你一份空行程。",
+        "",
+        "- 可以稍后再试一次，搜索服务可能暂时受限",
+        f"- 这些城市有内置地点库，不依赖联网搜索：{covered}",
+    ]
+    weather = [
+        f"- 第{day.day}天 · {day.date.isoformat()}：{note.removeprefix('天气：')}"
+        for day in draft.itinerary
+        for note in day.notes
+        if note.startswith("天气：")
+    ]
+    if weather:
+        lines.extend(["", "## 查到的天气", *weather])
+    notices = user_facing_warnings(draft.warnings)
+    if notices:
+        lines.extend(["", "## 数据说明", *(f"- {notice}" for notice in notices)])
+    return "\n".join(lines)
+
+
 def render_plan_markdown(draft: TravelPlanDraft) -> str:
+    if draft.itinerary and not has_concrete_places(draft):
+        return _render_unplannable(draft)
     lines = [f"# {draft.requirement.destination}{draft.requirement.days}日行程草稿", ""]
     if draft.requirement.assumptions:
         lines.append("## 假设说明")

@@ -10,6 +10,13 @@ export interface Point {
 
 export const DAY_COLORS = ["#fb6110", "#2563eb", "#14a37c", "#9333ea", "#e11d48", "#0891b2", "#ca8a04"];
 
+/** 至少有一个具体地点；每个时段都是"自由活动"的草稿不打开行程面板，只看文字说明。 */
+export function hasPlaces(plan: TravelPlanDraft): boolean {
+  return plan.itinerary.some((day) =>
+    day.slots.some((slot) => !slot.title.startsWith("自由") && !slot.title.endsWith("分区自由活动")),
+  );
+}
+
 /** 行程里的地点名 → 候选上的坐标（地点库城市才有）。 */
 export function pointIndex(plan: TravelPlanDraft): Map<string, Point> {
   const index = new Map<string, Point>();
