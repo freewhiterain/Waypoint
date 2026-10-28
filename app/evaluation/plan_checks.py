@@ -42,6 +42,8 @@ _PERIOD_NEEDS = {
     "night": (20 * 60, 20 * 60 + 30),
 }
 _WINDOW = re.compile(r"(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})")
+# 描述里顺带提到的别处（"顺路逛重逢1980街区（11:00-24:00，门票 35 元）"）写在括号里，不拿来比。
+_ASIDE = re.compile(r"（[^）]*）|\([^)]*\)")
 _STATED_PRICE = re.compile(r"(?:门票|人均)\s*(\d+(?:\.\d+)?)\s*元")
 _PLACEHOLDER_PREFIXES = ("自由", )
 _SIGHT_PERIODS = ("morning", "afternoon")
@@ -147,12 +149,13 @@ def _description_issues(itinerary: list[ItineraryDay]) -> list[PlanIssue]:
     issues = []
     for day in itinerary:
         for slot in day.slots:
-            prices = {float(value) for value in _STATED_PRICE.findall(slot.description)}
+            own = _ASIDE.sub("", slot.description)
+            prices = {float(value) for value in _STATED_PRICE.findall(own)}
             if slot.estimated_cost is not None and prices - {slot.estimated_cost}:
                 issues.append(PlanIssue(
                     "environment", f"「{slot.title}」描述里写 {sorted(prices)} 元，费用字段是 {slot.estimated_cost:g} 元"
                 ))
-            stated = {match.group(0).replace(" ", "") for match in _WINDOW.finditer(slot.description)}
+            stated = {match.group(0).replace(" ", "") for match in _WINDOW.finditer(own)}
             if slot.opening_window and _WINDOW.search(slot.opening_window) and stated - {slot.opening_window}:
                 issues.append(PlanIssue(
                     "environment", f"「{slot.title}」描述里的营业时间 {sorted(stated)} 和字段 {slot.opening_window} 不一致"

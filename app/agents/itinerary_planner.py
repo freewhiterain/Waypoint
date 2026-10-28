@@ -62,6 +62,8 @@ MAX_LUNCH_MINUTES = 30
 MAX_NIGHT_MINUTES = 45
 # 午餐时段要开着：11:30 前开门、13:30 后才关门。
 _LUNCH_WINDOW = (11 * 60 + 30, 13 * 60 + 30)
+# 晚饭要在这段时间营业：只做午市、下午四点半就打烊的自助餐不能排成晚饭。
+_DINNER_WINDOW = (18 * 60, 19 * 60 + 30)
 
 
 class SelectedPlace(BaseModel):
@@ -541,12 +543,17 @@ def wants_lunch(requirement: TravelRequirement) -> bool:
     return any(word in wanted for word in (*_FOOD_INTEREST_WORDS, *_FOOD_STYLE_WORDS[1:]))
 
 
-def _open_for_lunch(option: CandidateOption) -> bool:
+def _open_during(option: CandidateOption, needed: tuple[int, int]) -> bool:
+    """餐厅在这段饭点是否营业；没有营业时间的一律算营业。"""
     hours = str(option.attributes.get("opening_hours") or "")
     if hours == "全天":
         return True
     window = _opening_minutes(hours)
-    return window is None or (window[0] <= _LUNCH_WINDOW[0] and window[1] >= _LUNCH_WINDOW[1])
+    return window is None or (window[0] <= needed[0] and window[1] >= needed[1])
+
+
+def _open_for_lunch(option: CandidateOption) -> bool:
+    return _open_during(option, _LUNCH_WINDOW)
 
 
 def _pick_nearby(pool: list[str], used: set[str], near: str, costs: TravelCosts, max_minutes: int) -> str | None:
@@ -579,8 +586,11 @@ def build_itinerary(
         {option.id: option.name for option in _options(results, "attractions")},
         requirement.destination,
     )
-    dinner_pool = [item.id for item in selection.dinners]
-    backup_dinners = [option.id for option in _candidates(results, "food", requirement) if option.id not in dinner_pool]
+    open_for_dinner = [
+        option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)
+    ]
+    dinner_pool = [item.id for item in selection.dinners if item.id in open_for_dinner]
+    backup_dinners = [place_id for place_id in open_for_dinner if place_id not in dinner_pool]
     used_dinners: set[str] = set()
     night_options = {
         option.id: option

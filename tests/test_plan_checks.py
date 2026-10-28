@@ -98,3 +98,13 @@ def test_a_restaurant_named_after_a_landmark_is_not_a_second_visit():
     ]
 
     assert check_plan(requirement, plan, Catalog()) == []
+
+
+def test_numbers_about_a_nearby_place_in_parentheses_are_not_compared():
+    requirement = TravelRequirement(destination="大理", departure_date=START, days=1)
+    aside = TimeSlot(
+        period="morning", title="洪崖洞", opening_window="09:00-23:00", estimated_cost=0,
+        description="开放时间 09:00-23:00，免费；可顺路逛重逢1980街区（11:00-24:00，门票 35 元，需另购）。",
+    )
+
+    assert check_plan(requirement, [day(1, aside, slot("evening", "某饭馆"))], Catalog()) == []

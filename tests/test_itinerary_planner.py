@@ -399,3 +399,18 @@ async def test_two_names_for_the_same_night_activity_are_not_both_scheduled():
 
     nights = [slot.title for day in itinerary for slot in day.slots if slot.period == "night"]
     assert len(nights) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_restaurant_that_closes_in_the_afternoon_is_never_dinner():
+    results = chengdu_results(LEGS)
+    food = next(item for item in results if item.worker == "food")
+    food.options[0] = option("火锅", "food", opening_hours="11:30-16:30")
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
+
+    assert itinerary[0].slots[-1].title == "小吃"
