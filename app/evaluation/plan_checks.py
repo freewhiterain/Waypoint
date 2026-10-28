@@ -1,7 +1,9 @@
 """对结构化行程做可程序判定的约束检查（参照 ChinaTravel 的两层通过率）。
 
-- environment：行程里的地点、门票价、营业时间能在地点库里对上，不是编出来的。
-  只对地点库覆盖的城市做；库外城市靠联网搜索，没有可对照的真值。
+- environment：行程里的地点、门票价、营业时间能在地点库里对上，不是编出来的
+  （只对地点库覆盖的城市做；库外城市靠联网搜索，没有可对照的真值）；
+  模型改写的描述里写的价格、营业时间要和结构化字段一致（参照 ChinaTravel 的 C-LPR，
+  防止"文字里随口编个价"骗过检查）。
 - logic：天数和日期、不重复、用户说不去的地点、轻松的天、每天有晚饭、
   时段落在营业时间内。
 
@@ -41,6 +43,7 @@ _PERIOD_NEEDS = {
     "night": (20 * 60, 20 * 60 + 30),
 }
 _WINDOW = re.compile(r"(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})")
+_STATED_PRICE = re.compile(r"(?:门票|人均)\s*(\d+(?:\.\d+)?)\s*元")
 _PLACEHOLDER_PREFIXES = ("自由", )
 _SIGHT_PERIODS = ("morning", "afternoon")
 
@@ -111,6 +114,7 @@ def check_plan(
         if not any(named_by(title, [term]) for title in titles):
             logic(f"用户点名要去「{term}」，行程里没有")
 
+    issues.extend(_description_issues(itinerary))
     if city in catalog.cities():
         issues.extend(_environment_issues(city, itinerary, catalog))
     return issues
@@ -133,5 +137,22 @@ def _environment_issues(city: str, itinerary: list[ItineraryDay], catalog: Place
             if record.opening_hours and slot.opening_window and slot.opening_window != record.opening_hours:
                 issues.append(PlanIssue(
                     "environment", f"「{slot.title}」营业时间写 {slot.opening_window}，地点库是 {record.opening_hours}"
+                ))
+    return issues
+
+
+def _description_issues(itinerary: list[ItineraryDay]) -> list[PlanIssue]:
+    issues = []
+    for day in itinerary:
+        for slot in day.slots:
+            prices = {float(value) for value in _STATED_PRICE.findall(slot.description)}
+            if slot.estimated_cost is not None and prices - {slot.estimated_cost}:
+                issues.append(PlanIssue(
+                    "environment", f"「{slot.title}」描述里写 {sorted(prices)} 元，费用字段是 {slot.estimated_cost:g} 元"
+                ))
+            stated = {match.group(0).replace(" ", "") for match in _WINDOW.finditer(slot.description)}
+            if slot.opening_window and _WINDOW.search(slot.opening_window) and stated - {slot.opening_window}:
+                issues.append(PlanIssue(
+                    "environment", f"「{slot.title}」描述里的营业时间 {sorted(stated)} 和字段 {slot.opening_window} 不一致"
                 ))
     return issues

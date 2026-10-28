@@ -75,3 +75,16 @@ def test_cities_outside_the_catalog_skip_environment_checks():
     plan = [day(1, slot("morning", "洱海"), slot("evening", "某饭馆"))]
 
     assert check_plan(requirement, plan, Catalog()) == []
+
+
+def test_prices_and_hours_written_in_descriptions_must_match_the_fields():
+    requirement = TravelRequirement(destination="大理", departure_date=START, days=1)
+    honest = TimeSlot(period="morning", title="洱海", description="门票 50 元，开放时间 08:30-19:00",
+                      opening_window="08:30-19:00", estimated_cost=50)
+    made_up = TimeSlot(period="evening", title="某饭馆", description="人均 300 元，营业 10:00-22:00",
+                       opening_window="11:00-21:00", estimated_cost=120)
+
+    issues = check_plan(requirement, [day(1, honest, made_up)], Catalog())
+
+    assert [issue.category for issue in issues] == ["environment", "environment"]
+    assert all("某饭馆" in issue.message for issue in issues)
