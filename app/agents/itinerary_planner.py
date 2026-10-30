@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.trip_cost import estimate_trip_cost
 from app.core.llm import describe_llm_failure
-from app.places.catalog import is_local_food, named_by, straight_line_km
+from app.places.catalog import is_local_food, is_theme_park, named_by, straight_line_km
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -106,12 +106,11 @@ _NIGHT_INTEREST_WORDS = ("夜景", "夜游", "夜市", "夜生活", "灯光")
 
 # 主题乐园、大型动物园一玩就是一整天：当天不再排别的景点。地点库的建议游玩时长封顶 4 小时
 # （迪士尼也只写 3.5），靠不住，按名字认。
-_FULL_DAY_WORDS = ("迪士尼", "环球影城", "环球度假区", "欢乐谷", "长隆", "方特", "海洋公园", "野生动物园", "野生动物世界", "海昌")
 FULL_DAY_NOTE = "这里一玩就是一整天，当天不再安排别的景点。"
 
 
 def is_full_day_name(name: str) -> bool:
-    return any(word in name for word in _FULL_DAY_WORDS)
+    return is_theme_park(name)
 
 
 def is_full_day(option: CandidateOption) -> bool:
@@ -635,6 +634,21 @@ def _day_cost(plan: list[str], hotel_id: str | None, costs: TravelCosts) -> int:
     return min(walk(plan), walk(plan[::-1])) if plan else 0
 
 
+def fill_empty_days(day_plans: list[list[str]], whole_day: list[CandidateOption]) -> list[list[str]]:
+    """补完空位后仍有一整天空着（能凑普通一天的候选不够了），就排一个还没去的远郊或乐园，便宜的优先。
+
+    上海学生预算行程：候选里一半是乐园和远郊，普通景点只够两天，第三天整天"自由活动"。
+    """
+    used = {place_id for plan in day_plans for place_id in plan}
+    spare = sorted((option for option in whole_day if option.id not in used),
+                   key=lambda option: option.estimated_cost if option.estimated_cost is not None else float("inf"))
+    plans = [list(plan) for plan in day_plans]
+    for plan in plans:
+        if not plan and spare:
+            plan.append(spare.pop(0).id)
+    return plans
+
+
 def regroup_days(
     day_plans: list[list[str]], fixed: set[str], hotel_id: str | None, costs: TravelCosts, max_swaps: int = 20
 ) -> list[list[str]]:
@@ -843,6 +857,8 @@ def build_itinerary(
         {option.id: option.name for option in _options(results, "attractions")},
         requirement.destination,
     )
+    day_plans = fill_empty_days(day_plans, [option for option in _candidates(results, "attractions", requirement)
+                                            if whole(option)])
     day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
     day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities)
     open_for_dinner = [

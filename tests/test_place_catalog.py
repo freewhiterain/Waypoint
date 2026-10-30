@@ -299,3 +299,15 @@ def test_zero_price_on_a_historic_site_means_unrecorded_not_free():
 
     assert palace.known_price is None and "门票价格未收录" in palace.describe() and "免费" not in palace.describe()
     assert park.known_price == 0 and "免费" in park.describe()
+
+
+def test_theme_parks_do_not_crowd_ordinary_sights_out_of_the_shortlist(tmp_path):
+    rows = ["city,rank,name,type,latitude,longitude,open_time,close_time,price,min_hours,max_hours"]
+    rows += [f"上海,{i},乐园{i}迪士尼,游乐园/体育娱乐,31.1,121.6,09:00,21:00,399,4,6" for i in range(4)]
+    rows += [f"上海,{i + 4},景点{i},人文景观,31.2,121.5,08:00,18:00,0,1,2" for i in range(12)]
+    (tmp_path / "attractions.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    names = [record.name for record in PlaceCatalog(tmp_path).shortlist(requirement(destination="上海", days=3), "attractions")]
+
+    assert sum(name.startswith("景点") for name in names) == 9  # 普通景点名额不被乐园占
+    assert sum("迪士尼" in name for name in names) == 2

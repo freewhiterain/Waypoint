@@ -54,6 +54,16 @@ _STYLE_ALIASES = {
 }
 
 
+# 主题乐园、大型动物园：一玩就是一整天（排程据此让它独占一天）。
+_THEME_PARK_WORDS = ("迪士尼", "环球影城", "环球度假区", "欢乐谷", "长隆", "方特", "海洋公园", "野生动物园", "野生动物世界", "海昌")
+# 乐园不占普通景点的名额，另外最多给这么多个：不然热门榜前几名全是乐园，能排满普通一天的候选不够。
+_THEME_PARK_EXTRA = 2
+
+
+def is_theme_park(name: str) -> bool:
+    return any(word in name for word in _THEME_PARK_WORDS)
+
+
 _UNRECORDED_ZERO_TYPES = {"历史古迹", "文化旅游区", "游乐园/体育娱乐", "园林"}
 
 
@@ -203,7 +213,7 @@ class PlaceCatalog:
         if category == "hotel":
             return _affordable_hotels(records, requirement)[:HOTEL_SHORTLIST]
         limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
-        night_extra: list[PlaceRecord] = []
+        extra: list[PlaceRecord] = []
         if category == "food":
             price_cap = None if _wants_upscale(requirement) else _price_cap(records)
             budget_cap = _budget_share(requirement, _MEAL_SHARE) / requirement.days if requirement.budget else None
@@ -222,22 +232,24 @@ class PlaceCatalog:
             # 夜景、夜游类地点排程时只会放进晚饭后的夜间时段：不占白天景点的名额，
             # 用户想看夜景时另外追加几个，没说时不要。
             night = [record for record in records if any(word in record.name for word in _NIGHT_WORDS)]
-            records = [record for record in records if record not in night]
+            parks = [record for record in records[: limit * 2] if is_theme_park(record.name)][:_THEME_PARK_EXTRA]
+            records = [record for record in records if record not in night and not is_theme_park(record.name)]
+            extra = list(parks)
             if any(word in "".join(requirement.styles) for word in ("夜景", "夜游", "夜市", "夜生活", "灯光")):
-                night_extra = night[: requirement.days + 1]
+                extra += night[: requirement.days + 1]
             keywords = list(requirement.styles)
-        # 用户点名要去的放最前面，不占名额；夜景点也照样给（排程会放进夜间时段）。
+        # 用户点名要去的放最前面，不占名额；乐园和夜景点另外追加（排程会让乐园独占一天、夜景放进夜间时段）。
         named = [record for record in self.places(requirement.destination, category)
                  if named_by(record.name, requirement.must_visit)]
         records = [record for record in records if record not in named]
-        night_extra = [record for record in night_extra if record not in named]
+        extra = [record for record in extra if record not in named]
         matched = [record for record in records if _matches(record, keywords)]
         # 偏好命中的最多占三分之二，其余仍按热门程度取：用户说"喜欢博物馆"，大部分就该是博物馆，
         # 但也别排满冷门小馆，留几个经典地标。
         preferred = matched[: limit * 2 // 3]
         chosen = {record.id for record in preferred}
         rest = [record for record in records if record.id not in chosen][: limit - len(preferred)]
-        picked = named + preferred + rest + night_extra
+        picked = named + preferred + rest + extra
         if category == "food":
             picked += self._near_attractions(requirement, records, picked)
         return picked

@@ -668,3 +668,12 @@ def test_a_hotel_found_by_web_search_shows_no_raw_snippet():
 
     assert _hotel_note(scraped) == "价格和房态请在订房平台确认。"
     assert _hotel_note(listed) == "住宿，特色：桑拿，参考价 353 元/晚。"
+
+
+def test_an_empty_day_gets_an_unused_full_day_option_cheapest_first():
+    from app.agents.itinerary_planner import fill_empty_days
+
+    parks = [option("迪士尼", "attractions", cost=399), option("天文馆", "attractions", cost=0)]
+
+    assert fill_empty_days([["豫园", "外滩"], []], parks) == [["豫园", "外滩"], ["天文馆"]]
+    assert fill_empty_days([["豫园"], ["外滩"]], parks) == [["豫园"], ["外滩"]]
