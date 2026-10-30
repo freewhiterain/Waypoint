@@ -65,26 +65,31 @@ function Composer() {
 function EmptyState() {
   const { send, busy, user } = useChat();
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 py-10 sm:px-6">
-      <p className="text-sm font-medium text-sun-600 dark:text-sun-400">你好，{user?.username}</p>
-      <h1 className="mt-2 font-display text-3xl font-semibold leading-tight sm:text-4xl">
-        这次想去哪里？
-        <br />
-        <span className="text-ink-400">告诉我，剩下的交给 WayPoint。</span>
-      </h1>
-      <div className="mt-10 grid gap-3 sm:grid-cols-2">
-        {SUGGESTIONS.map((item) => (
-          <button
-            key={item.title}
-            disabled={busy}
-            onClick={() => send(item.text)}
-            className="card group p-4 text-left transition hover:-translate-y-0.5 hover:border-sun-300 hover:shadow-float"
-          >
-            <span className="text-2xl">{item.emoji}</span>
-            <p className="mt-3 font-medium">{item.title}</p>
-            <p className="mt-1 text-sm text-ink-400 group-hover:text-ink-500 dark:group-hover:text-ink-300">{item.text}</p>
-          </button>
-        ))}
+    // 用 my-auto 而不是 justify-center 居中：内容比屏幕高时（手机上）顶部不会被裁掉、也能滚动。
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10">
+      <div className="my-auto">
+        <p className="text-sm font-medium text-sun-600 dark:text-sun-400">你好，{user?.username}</p>
+        <h1 className="mt-2 font-display text-2xl font-semibold leading-tight sm:text-4xl">
+          这次想去哪里？
+          <br />
+          <span className="text-ink-400">告诉我，剩下的交给 WayPoint。</span>
+        </h1>
+        <div className="mt-6 grid grid-cols-2 gap-2 sm:mt-10 sm:gap-3">
+          {SUGGESTIONS.map((item) => (
+            <button
+              key={item.title}
+              disabled={busy}
+              onClick={() => send(item.text)}
+              className="card group p-3 text-left transition hover:-translate-y-0.5 hover:border-sun-300 hover:shadow-float sm:p-4"
+            >
+              <span className="text-xl sm:text-2xl">{item.emoji}</span>
+              <p className="mt-2 text-sm font-medium sm:mt-3 sm:text-base">{item.title}</p>
+              <p className="mt-1 hidden text-sm text-ink-400 group-hover:text-ink-500 sm:block dark:group-hover:text-ink-300">
+                {item.text}
+              </p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
