@@ -578,3 +578,35 @@ async def test_an_outskirts_sight_gets_a_day_of_its_own():
 
     excursion = next(day for day in itinerary if any(slot.title == "都江堰" for slot in day.slots))
     assert [slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")] == ["都江堰"]
+
+
+def test_famous_outskirts_count_as_excursions_without_coordinates():
+    from app.agents.itinerary_planner import is_excursion, is_full_day
+
+    assert is_excursion(option("秦始皇帝陵博物院(兵马俑)", "attractions"))
+    assert is_excursion(option("八达岭长城", "attractions"))
+    assert not is_excursion(option("陕西历史博物馆", "attractions"))
+    assert not is_full_day(option("八达岭长城", "attractions"))  # 远郊不是乐园，挨着的可以同一天
+
+
+def test_hotel_note_keeps_only_a_short_summary():
+    from app.agents.itinerary_planner import _hotel_summary
+
+    review = "位于钟楼附近的舒适酒店。2022年入住，前台小姐姐很热情，早餐丰富，下次还来" * 3
+    assert _hotel_summary(review) == "位于钟楼附近的舒适酒店。"
+    assert _hotel_summary("一" * 100).endswith("…") and len(_hotel_summary("一" * 100)) == 61
+
+
+@pytest.mark.asyncio
+async def test_a_street_visited_as_a_sight_is_not_also_dinner():
+    results = chengdu_results(LEGS + [leg("锦里", "锦里", 0)])
+    food = next(item for item in results if item.worker == "food")
+    food.options.insert(0, option("锦里", "food"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="锦里")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
+
+    assert itinerary[0].slots[-1].title != "锦里"

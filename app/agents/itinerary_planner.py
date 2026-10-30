@@ -115,7 +115,24 @@ def is_full_day_name(name: str) -> bool:
 
 
 def is_full_day(option: CandidateOption) -> bool:
+    """主题乐园、大型动物园：一玩一整天，当天只排它。"""
     return is_full_day_name(option.name)
+
+
+def is_excursion(option: CandidateOption, remote: set[str] | None = None) -> bool:
+    """远郊景点：往返就要大半天，单独给一天；挨着的几处可以同一天。"""
+    return option.id in (remote or set()) or any(word in option.name for word in _FAMOUS_OUTSKIRTS)
+
+
+# 没有坐标时（联网搜索的城市）认不出远郊，按名字补几处常见的：兵马俑在临潼、长城在延庆怀柔。
+_FAMOUS_OUTSKIRTS = ("兵马俑", "秦始皇帝陵", "长城", "千岛湖", "青城山", "峨眉山", "乐山大佛", "黄山")
+# 住宿备注只留第一句：联网搜到的酒店描述常是整段订房评论。
+_HOTEL_SUMMARY_CHARS = 60
+
+
+def _hotel_summary(description: str) -> str:
+    first = description.split("。")[0].strip()
+    return (first[:_HOTEL_SUMMARY_CHARS] + "…") if len(first) > _HOTEL_SUMMARY_CHARS else (first + "。" if first else "")
 
 
 # 离城市中心（候选景点坐标的中位数）超过这个直线距离的，往返就要大半天，按一整天安排：
@@ -753,20 +770,37 @@ def build_itinerary(
     remote = outskirts(_options(results, "attractions"))
 
     def whole(option: CandidateOption) -> bool:
-        return is_full_day(option) or option.id in remote
+        return is_full_day(option) or is_excursion(option, remote)
 
-    # 全天的景点（乐园、远郊）各占一天：先定好是哪天、那天容量设为 1，再交给分天算法（排在最前面先放）。
+    # 乐园独占一天（那天容量设为 1）；远郊景点也各给一天，但彼此挨着的（都江堰和青城山）可以同一天，
+    # 市区景点离得远，分天算法本来就不会往那天塞。先定好日子，排在最前面先放。
     full_day: list[str] = []
+    excursion_days: dict[str, int] = {}
     for item in selection.attractions:
-        if not whole(options[item.id]) or len(full_day) >= requirement.days:
+        option = options[item.id]
+        if not whole(option):
             continue
         taken = {preferred[place_id] for place_id in full_day}
-        day = item.preferred_day if item.preferred_day and item.preferred_day not in taken else next(
-            day for day in range(1, requirement.days + 1) if day not in taken
-        )
+        if not is_full_day(option):
+            near = next((day for other, day in excursion_days.items()
+                         if costs.cost(other, item.id) <= MAX_HOP_MINUTES), None)
+            if near is not None:
+                preferred[item.id] = near
+                full_day.append(item.id)
+                continue
+        # 第一天多半要赶路，整天的安排尽量放在行程中间
+        middle = (requirement.days + 1) / 2
+        free = sorted((day for day in range(1, requirement.days + 1) if day not in taken),
+                      key=lambda day: (day == 1 and requirement.days > 1, abs(day - middle)))
+        if not free:
+            continue
+        day = item.preferred_day if item.preferred_day in free else free[0]
         preferred[item.id] = day
-        capacities[day - 1] = 1
         full_day.append(item.id)
+        if is_full_day(option):
+            capacities[day - 1] = 1
+        else:
+            excursion_days[item.id] = day
     attraction_ids = full_day + [
         item.id for item in selection.attractions if item.id not in full_day and not whole(options[item.id])
     ]
@@ -795,6 +829,11 @@ def build_itinerary(
         base = _base_name(food_names.get(place_id, ""))
         used_dinners.add(place_id)
         used_dinners.update(other for other, name in food_names.items() if base and _base_name(name) == base)
+
+    # 联网搜索的城市，同一个名字常同时出现在景点和美食候选里（西安的"回民街"）：
+    # 已经作为景点去了的，不再当饭店排。只比括号外的名字是否完全相同，"外滩酒店·西餐厅"不受影响。
+    sight_bases = {_base_name(options[place_id].name) for plan in day_plans for place_id in plan}
+    used_dinners.update(other for other, name in food_names.items() if _base_name(name) in sight_bases)
     night_options = {
         option.id: option
         for option in _options(results, "attractions")
@@ -1181,7 +1220,7 @@ async def plan_itinerary(
         feedback = [item for item in feedback if item.code != "budget"] + _budget_violations(requirement, itinerary, hotel)
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
     if hotel is not None and itinerary:
-        itinerary[0].notes.insert(0, f"{HOTEL_NOTE_PREFIX}{hotel.name}。{hotel.description}")
+        itinerary[0].notes.insert(0, f"{HOTEL_NOTE_PREFIX}{hotel.name}。{_hotel_summary(hotel.description)}")
     for day, text in _trip_weather(requirement, results).items():
         if day <= len(itinerary):
             itinerary[day - 1].notes.insert(0, f"{WEATHER_NOTE_PREFIX}{text}")
