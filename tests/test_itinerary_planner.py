@@ -556,3 +556,25 @@ def test_regrouping_puts_nearby_sights_on_the_same_day():
     # 指定了日子的不动
     assert regroup_days([["武侯祠", "熊猫基地"], ["锦里", "宽窄巷子"]], {"熊猫基地", "武侯祠"}, "武侯酒店", costs)[0] \
         == ["武侯祠", "熊猫基地"]
+
+
+@pytest.mark.asyncio
+async def test_an_outskirts_sight_gets_a_day_of_its_own():
+    def at(name, lat, lng):
+        return option(name, "attractions", latitude=lat, longitude=lng)
+
+    results = chengdu_results(LEGS)
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options[:] = [at("武侯祠", 30.646, 104.048), at("锦里", 30.645, 104.050),
+                              at("宽窄巷子", 30.669, 104.056), at("熊猫基地", 30.733, 104.146),
+                              at("都江堰", 31.002, 103.618)]
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="都江堰"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    excursion = next(day for day in itinerary if any(slot.title == "都江堰" for slot in day.slots))
+    assert [slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")] == ["都江堰"]

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from statistics import median
 from itertools import permutations
 from typing import Any
 
@@ -115,6 +116,24 @@ def is_full_day_name(name: str) -> bool:
 
 def is_full_day(option: CandidateOption) -> bool:
     return is_full_day_name(option.name)
+
+
+# 离城市中心（候选景点坐标的中位数）超过这个直线距离的，往返就要大半天，按一整天安排：
+# 成都的都江堰 56km、北京的八达岭 57km、上海的朱家角 44km。
+OUTSKIRTS_KM = 35.0
+
+
+def outskirts(options: list[CandidateOption]) -> set[str]:
+    located = [
+        (option.id, (float(option.attributes["latitude"]), float(option.attributes["longitude"])))
+        for option in options
+        if isinstance(option.attributes.get("latitude"), (int, float))
+        and isinstance(option.attributes.get("longitude"), (int, float))
+    ]
+    if len(located) < 3:
+        return set()
+    center = (median(point[0] for _, point in located), median(point[1] for _, point in located))
+    return {place_id for place_id, point in located if straight_line_km(center, point) > OUTSKIRTS_KM}
 
 
 def is_night_spot(option: CandidateOption) -> bool:
@@ -334,6 +353,7 @@ async def select_places_with_llm(
                 "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个；"
                 "同一处地方的不同叫法（如灵隐寺和灵隐飞来峰景区）只选一个。"
                 "迪士尼、环球影城、欢乐谷、长隆这类主题乐园和大型动物园一玩就是一整天，"
+                "离市区几十公里的郊县景点（都江堰、八达岭长城这类）同样占一整天；"
                 "选了它当天就不会再排别的景点，景点总数要相应少选。"
                 "需求里 must_visit 是用户点名要去的地点，候选里有就必须选上。"
                 "需求里 budget 是整趟所有人的总预算（元）：门票和餐饮的 estimated_cost 按人头算、"
@@ -712,10 +732,15 @@ def build_itinerary(
     options = {option.id: option for worker in ("attractions", "food") for option in _options(results, worker)}
     preferred = {item.id: item.preferred_day for item in selection.attractions if item.preferred_day}
     capacities = day_capacities(requirement)
-    # 全天的景点各占一天：先定好是哪天、那天容量设为 1，再交给分天算法（排在最前面先放）。
+    remote = outskirts(_options(results, "attractions"))
+
+    def whole(option: CandidateOption) -> bool:
+        return is_full_day(option) or option.id in remote
+
+    # 全天的景点（乐园、远郊）各占一天：先定好是哪天、那天容量设为 1，再交给分天算法（排在最前面先放）。
     full_day: list[str] = []
     for item in selection.attractions:
-        if not is_full_day(options[item.id]) or len(full_day) >= requirement.days:
+        if not whole(options[item.id]) or len(full_day) >= requirement.days:
             continue
         taken = {preferred[place_id] for place_id in full_day}
         day = item.preferred_day if item.preferred_day and item.preferred_day not in taken else next(
@@ -725,12 +750,12 @@ def build_itinerary(
         capacities[day - 1] = 1
         full_day.append(item.id)
     attraction_ids = full_day + [
-        item.id for item in selection.attractions if item.id not in full_day and not is_full_day(options[item.id])
+        item.id for item in selection.attractions if item.id not in full_day and not whole(options[item.id])
     ]
     day_plans = assign_days(attraction_ids, preferred, requirement.days, selection.hotel_id, costs, capacities)
     day_plans = top_up_days(
         day_plans,
-        [option.id for option in _candidates(results, "attractions", requirement) if not is_full_day(option)],
+        [option.id for option in _candidates(results, "attractions", requirement) if not whole(option)],
         selection.hotel_id,
         costs,
         capacities,
@@ -775,7 +800,7 @@ def build_itinerary(
         slots: list[TimeSlot] = []
         previous = selection.hotel_id
         periods = _assign_periods([options[place_id] for place_id in place_ids])
-        whole_day = len(place_ids) == 1 and is_full_day(options[place_ids[0]])
+        whole_day = len(place_ids) == 1 and whole(options[place_ids[0]])
         for period in ("morning", "afternoon"):
             option = periods.get(period)
             if whole_day:
