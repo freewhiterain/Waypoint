@@ -919,6 +919,46 @@ def trim_to_budget(
     return days
 
 
+_DISTANCE_CODES = ("daily_travel", "dinner_far")
+
+
+def drop_outlying_sights(
+    requirement: TravelRequirement,
+    results: list[WorkerResult],
+    selection: PlaceSelection,
+    itinerary: list[ItineraryDay],
+    costs: TravelCosts,
+) -> list[ItineraryDay] | None:
+    """模型几轮都没解决"路上太久/晚饭太远"时的兜底：去掉那天最偏的景点，让算法就近补位重排。
+
+    典型情况是上海一天里排"黄浦江 → 临港的天文馆 → 回市区吃晚饭"，路上三个多小时。
+    最偏的 = 进出它的路程之和最长的那个；用户点名要去的不动。没有可去的就返回 None。
+    """
+    by_name = {option.name: option for option in _options(results, "attractions")}
+    dropped: list[str] = []
+    for day in itinerary:
+        travel = sum(slot.travel_minutes or 0 for slot in day.slots)
+        dinner = next((slot.travel_minutes or 0 for slot in day.slots if slot.period == "evening"), 0)
+        if travel <= MAX_DAILY_TRAVEL_MINUTES and dinner <= MAX_DINNER_MINUTES:
+            continue
+        outlay = {}
+        for index, slot in enumerate(day.slots):
+            if slot.period not in ("morning", "afternoon") or slot.title not in by_name:
+                continue
+            if named_by(slot.title, requirement.must_visit):
+                continue
+            leaving = day.slots[index + 1].travel_minutes if index + 1 < len(day.slots) else 0
+            outlay[slot.title] = (slot.travel_minutes or 0) + (leaving or 0)
+        if outlay:
+            dropped.append(max(outlay, key=outlay.get))
+    if not dropped:
+        return None
+    ids = {by_name[name].id for name in dropped}
+    narrowed = requirement.model_copy(update={"avoid_places": [*requirement.avoid_places, *dropped]})
+    trimmed = selection.model_copy(update={"attractions": [item for item in selection.attractions if item.id not in ids]})
+    return build_itinerary(narrowed, results, trimmed, costs)
+
+
 def _budget_violations(
     requirement: TravelRequirement, itinerary: list[ItineraryDay], hotel: CandidateOption | None
 ) -> list[Violation]:
@@ -979,6 +1019,14 @@ async def plan_itinerary(
         # 规则选点不会根据违规原因调整，重选也是同一个结果，只有 LLM 选点才值得再来一轮。
         if not feedback or by_rules:
             break
+    if selection is not None and any(item.code in _DISTANCE_CODES for item in feedback):
+        repaired = drop_outlying_sights(requirement, results, selection, itinerary, costs)
+        if repaired is not None:
+            repaired_feedback = check_itinerary(requirement, results, repaired) + _budget_violations(
+                requirement, repaired, hotel
+            )
+            if len(repaired_feedback) < len(feedback):
+                itinerary, feedback = repaired, repaired_feedback
     if any(item.code == "budget" for item in feedback):
         # 模型几轮都压不进预算时，由算法把最贵的饭和门票换成附近更便宜的。
         itinerary = trim_to_budget(requirement, results, itinerary, hotel, costs)

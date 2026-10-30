@@ -500,3 +500,20 @@ async def test_a_hotel_far_from_the_chosen_sights_is_replaced_by_a_closer_one():
     itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
 
     assert any(note.startswith("住宿：武侯酒店") for note in itinerary[0].notes)
+
+
+@pytest.mark.asyncio
+async def test_an_outlying_sight_that_keeps_breaking_travel_limits_is_dropped():
+    # 远郊天文馆：从锦里过去 100 分钟、吃饭又要 100 分钟；模型三轮都坚持选它
+    far = [leg("锦里", "天文馆", 100), leg("武侯祠", "天文馆", 100), leg("天文馆", "火锅", 100),
+           leg("天文馆", "小吃", 100), leg("武侯酒店", "天文馆", 100)]
+    results = chengdu_results(LEGS + far)
+    next(item for item in results if item.worker == "attractions").options.append(option("天文馆", "attractions"))
+    stubborn = PlaceSelection(hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="天文馆")],
+                              dinners=[SelectedPlace(id="火锅")])
+
+    itinerary, warnings = await plan_itinerary(requirement(days=1), results, llm=FakeLLM([stubborn] * 3))
+
+    titles = [slot.title for slot in itinerary[0].slots]
+    assert "天文馆" not in titles and "武侯祠" in titles and "锦里" in titles
+    assert not any("daily_travel" in w or "dinner_far" in w for w in warnings)
