@@ -115,3 +115,11 @@ def test_a_theme_park_sharing_its_day_is_flagged():
     plan = [day(1, slot("morning", "上海迪士尼度假区"), slot("afternoon", "上海野生动物园"), slot("evening", "饭馆"))]
 
     assert any("一整天" in issue.message for issue in check_plan(requirement, plan, Catalog()))
+
+
+def test_a_whole_day_without_sights_is_flagged():
+    requirement = TravelRequirement(destination="上海", departure_date=START, days=2)
+    plan = [day(1, slot("morning", "豫园"), slot("evening", "饭馆")),
+            day(2, slot("morning", "上海分区自由活动"), slot("afternoon", "自由活动"), slot("evening", "面馆"))]
+
+    assert any("第2天整天没有安排任何景点" in issue.message for issue in check_plan(requirement, plan, Catalog()))

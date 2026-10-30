@@ -117,6 +117,8 @@ def check_plan(
         if not any(slot.period == "evening" for slot in day.slots):
             logic(f"第{day.day}天没有晚饭")
         sights = [slot for slot in places if slot.period in _SIGHT_PERIODS]
+        if not sights and len(itinerary) > 1:
+            logic(f"第{day.day}天整天没有安排任何景点")
         if len(sights) > 1 and any(is_full_day_name(slot.title) for slot in sights):
             logic(f"第{day.day}天的{'、'.join(slot.title for slot in sights)}里有要玩一整天的乐园，不该再排别的")
         if day.day in requirement.relaxed_days and len(sights) > 1:
