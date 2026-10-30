@@ -610,3 +610,26 @@ async def test_a_street_visited_as_a_sight_is_not_also_dinner():
     itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
 
     assert itinerary[0].slots[-1].title != "锦里"
+
+
+@pytest.mark.asyncio
+async def test_a_city_sight_is_not_squeezed_into_an_excursion_day_even_when_the_drive_is_borderline():
+    def at(name, lat, lng):
+        return option(name, "attractions", latitude=lat, longitude=lng)
+
+    # 真实车程 70 分钟，刚好在同日上限内
+    results = chengdu_results(LEGS + [leg("都江堰", "武侯祠", 70), leg("都江堰", "锦里", 70)])
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options[:] = [at("武侯祠", 30.646, 104.048), at("锦里", 30.645, 104.050),
+                              at("宽窄巷子", 30.669, 104.056), at("都江堰", 31.002, 103.618)]
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="都江堰"), SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    excursion = next(day for day in itinerary if any(slot.title == "都江堰" for slot in day.slots))
+    assert [slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")] == ["都江堰"]
+    assert excursion.day == 2  # 避开第一天

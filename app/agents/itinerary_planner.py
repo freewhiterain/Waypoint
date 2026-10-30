@@ -140,17 +140,27 @@ def _hotel_summary(description: str) -> str:
 OUTSKIRTS_KM = 35.0
 
 
-def outskirts(options: list[CandidateOption]) -> set[str]:
-    located = [
+def _located(options: list[CandidateOption]) -> list[tuple[str, tuple[float, float]]]:
+    return [
         (option.id, (float(option.attributes["latitude"]), float(option.attributes["longitude"])))
         for option in options
         if isinstance(option.attributes.get("latitude"), (int, float))
         and isinstance(option.attributes.get("longitude"), (int, float))
     ]
-    if len(located) < 3:
+
+
+def outskirts(results: list[WorkerResult]) -> set[str]:
+    """离城市中心超过 OUTSKIRTS_KM 的景点。
+
+    中心取所有候选（景点、餐厅、酒店）坐标的中位数：只看景点时，候选里远郊一多，
+    中位数会被拉到城郊之间，谁都不算远。餐厅和酒店大多在市区，能把中心稳住。
+    """
+    reference = _located([option for worker in ("attractions", "food", "hotel") for option in _options(results, worker)])
+    if len(reference) < 3:
         return set()
-    center = (median(point[0] for _, point in located), median(point[1] for _, point in located))
-    return {place_id for place_id, point in located if straight_line_km(center, point) > OUTSKIRTS_KM}
+    center = (median(point[0] for _, point in reference), median(point[1] for _, point in reference))
+    return {place_id for place_id, point in _located(_options(results, "attractions"))
+            if straight_line_km(center, point) > OUTSKIRTS_KM}
 
 
 def is_night_spot(option: CandidateOption) -> bool:
@@ -767,13 +777,13 @@ def build_itinerary(
     options = {option.id: option for worker in ("attractions", "food") for option in _options(results, worker)}
     preferred = {item.id: item.preferred_day for item in selection.attractions if item.preferred_day}
     capacities = day_capacities(requirement)
-    remote = outskirts(_options(results, "attractions"))
+    remote = outskirts(results)
 
     def whole(option: CandidateOption) -> bool:
         return is_full_day(option) or is_excursion(option, remote)
 
-    # 乐园独占一天（那天容量设为 1）；远郊景点也各给一天，但彼此挨着的（都江堰和青城山）可以同一天，
-    # 市区景点离得远，分天算法本来就不会往那天塞。先定好日子，排在最前面先放。
+    # 乐园独占一天；远郊景点也各给一天，彼此挨着的（都江堰和青城山）可以同一天，但不和市区景点混排。
+    # 先定好日子、那天的容量只留给它们，排在最前面先放。
     full_day: list[str] = []
     excursion_days: dict[str, int] = {}
     for item in selection.attractions:
@@ -785,7 +795,10 @@ def build_itinerary(
             near = next((day for other, day in excursion_days.items()
                          if costs.cost(other, item.id) <= MAX_HOP_MINUTES), None)
             if near is not None:
+                if capacities[near - 1] >= ATTRACTIONS_PER_DAY:
+                    continue
                 preferred[item.id] = near
+                capacities[near - 1] += 1
                 full_day.append(item.id)
                 continue
         # 第一天多半要赶路，整天的安排尽量放在行程中间
@@ -797,9 +810,9 @@ def build_itinerary(
         day = item.preferred_day if item.preferred_day in free else free[0]
         preferred[item.id] = day
         full_day.append(item.id)
-        if is_full_day(option):
-            capacities[day - 1] = 1
-        else:
+        # 那天的容量 = 排进去的远郊/乐园数：市区景点即使真实车程刚好压线，也不会被凑进来
+        capacities[day - 1] = 1
+        if not is_full_day(option):
             excursion_days[item.id] = day
     attraction_ids = full_day + [
         item.id for item in selection.attractions if item.id not in full_day and not whole(options[item.id])

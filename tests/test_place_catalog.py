@@ -251,7 +251,9 @@ def test_far_apart_places_are_not_forced_into_the_same_day():
     itinerary = _plan(["武侯祠", "都江堰"])
 
     assert [slot.title for slot in itinerary[0].slots[:2]] == ["武侯祠", "自由活动"]
-    assert [slot.title for slot in itinerary[1].slots[:2]] == ["都江堰", "自由活动"]
+    # 都江堰在远郊：单独一天，按一整天写，下午不再出现"自由活动"
+    assert [slot.title for slot in itinerary[1].slots[:2]] == ["都江堰", "都江堰的餐厅"]
+    assert "一整天" in itinerary[1].slots[0].description
 
 
 def test_late_opening_place_is_moved_to_the_afternoon():
