@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
     ResearchTask,
+    TimeSlot,
     TravelPlanDraft,
     TravelRequirement,
     WorkerResult,
@@ -260,10 +262,35 @@ def _merge_day(written: _DayText, template: ItineraryDay) -> ItineraryDay:
     if [slot.period for slot in written.slots] != [slot.period for slot in template.slots]:
         return template
     slots = [
-        source.model_copy(update={"description": slot.description or source.description})
+        source.model_copy(update={"description": align_stated_facts(slot.description, source) if slot.description
+                                  else source.description})
         for slot, source in zip(written.slots, template.slots)
     ]
     return template.model_copy(update={"slots": slots})
+
+
+# 描述里写的价格、营业时间以字段为准。括号里顺带提到的别处（"顺路逛重逢1980街区（门票 35 元）"）不动。
+_STATED_PRICE = re.compile(r"((?:门票|人均)(?:约)?\s*)(\d+(?:\.\d+)?)(\s*元)")
+_STATED_WINDOW = re.compile(r"\d{1,2}:\d{2}\s*[-–~至]\s*\d{1,2}:\d{2}")
+_ASIDE = re.compile(r"（[^）]*）|\([^)]*\)")
+
+
+def align_stated_facts(description: str, slot: TimeSlot) -> str:
+    """模型改写描述时偶尔把人均 70 写成 74：把正文里的价格和营业时间改回字段里的数。"""
+
+    def fix(segment: str) -> str:
+        if slot.estimated_cost is not None:
+            segment = _STATED_PRICE.sub(lambda m: f"{m.group(1)}{slot.estimated_cost:g}{m.group(3)}", segment)
+        if slot.opening_window and _STATED_WINDOW.fullmatch(slot.opening_window):
+            segment = _STATED_WINDOW.sub(slot.opening_window, segment)
+        return segment
+
+    parts, last = [], 0
+    for aside in _ASIDE.finditer(description):
+        parts.extend([fix(description[last:aside.start()]), aside.group(0)])
+        last = aside.end()
+    parts.append(fix(description[last:]))
+    return "".join(parts)
 
 
 def assemble_draft(
