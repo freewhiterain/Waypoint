@@ -41,6 +41,11 @@ export function TripCard({ messageId, trip, interactive }: { messageId: string; 
         <Check className="h-4 w-4" />
         {trip.status === "completed" ? `已确认：${summary}` : `需求表单：${summary || "未填写"}`}
         {trip.revisions.length > 0 && <span className="text-sun-600 dark:text-sun-300">· {trip.revisions.join(" · ")}</span>}
+        {trip.notes && (
+          <span className="max-w-[16rem] truncate text-ink-500 dark:text-ink-300" title={trip.notes}>
+            · 补充：{trip.notes}
+          </span>
+        )}
       </div>
     );
   }

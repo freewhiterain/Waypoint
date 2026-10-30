@@ -41,6 +41,8 @@ export interface TripCall {
   /** 推荐回答里提到的城市，卡片上给出"就去这里"的快捷选项。 */
   suggestions: string[];
   error: string;
+  /** 提交时写的"还有什么要求"。 */
+  notes?: string;
 }
 
 export interface ResearchStep {
@@ -184,6 +186,7 @@ function rebuild(history: HistoryMessage[]): ChatMessage[] {
       if (trip && result.status === "completed") {
         trip.status = "completed";
         if (result.result) trip.values = { ...trip.values, ...stringify(result.result) };
+        if (result.result?.notes) trip.notes = String(result.result.notes);
       } else if (trip && result.status === "awaiting_destination") {
         trip.values = { ...trip.values, ...stringify(result.partial_values || {}) };
         trip.recommendation = item.content;
@@ -395,7 +398,7 @@ export const useChat = create<State>((set, get) => {
       const trip = message?.trip;
       if (!trip || get().busy) return;
       set({ busy: true });
-      patchTrip(messageId, { status: "submitting", error: "", values });
+      patchTrip(messageId, { status: "submitting", error: "", values, notes: notes.trim() });
 
       const planId = uid();
       set((state) => ({
