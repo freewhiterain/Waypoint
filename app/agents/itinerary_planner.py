@@ -195,6 +195,53 @@ def _trip_weather(requirement: TravelRequirement, results: list[WorkerResult]) -
     return {day: forecast[iso] for day, iso in days.items() if iso in forecast}
 
 
+_RAIN_CHANCE = re.compile(r"降水概率\s*(\d+)%")
+_OUTDOOR_TYPES = {"公园", "自然风光", "园林", "游乐园/体育娱乐", "商业街区", "人文景观"}
+# 降水概率不低于这个值算雨天；要换过去的那天得明显更干。
+RAINY_CHANCE, DRY_MARGIN = 70, 30
+
+
+def _rain_chance(text: str | None) -> int | None:
+    match = _RAIN_CHANCE.search(text or "")
+    return int(match.group(1)) if match else None
+
+
+def dodge_rain(
+    day_plans: list[list[str]],
+    options: dict[str, CandidateOption],
+    weather: dict[int, str],
+    capacities: list[int],
+) -> list[list[str]]:
+    """雨天那天户外景点多、另一天明显更干且户外少时，两天的景点整组对调。
+
+    只换日子不换地点：每天内部的顺路关系不变；只在容量相同的两天之间换，
+    "第二天轻松点"这类按天的要求不受影响。
+    """
+    plans = [list(plan) for plan in day_plans]
+
+    def outdoor(plan: list[str]) -> int:
+        return sum(str(options[place_id].attributes.get("type")) in _OUTDOOR_TYPES for place_id in plan)
+
+    chance = {day: _rain_chance(text) for day, text in weather.items()}
+    rainy = sorted((day for day, value in chance.items() if value is not None and value >= RAINY_CHANCE),
+                   key=lambda day: -(chance[day] or 0))
+    swapped: set[int] = set()
+    for wet in rainy:
+        if wet in swapped:
+            continue
+        candidates = [
+            day for day in range(1, len(plans) + 1)
+            if day != wet and day not in swapped and chance.get(day) is not None
+            and (chance[day] or 0) + DRY_MARGIN <= (chance[wet] or 0)
+            and capacities[day - 1] == capacities[wet - 1] and outdoor(plans[day - 1]) < outdoor(plans[wet - 1])
+        ]
+        if candidates:
+            dry = min(candidates, key=lambda day: chance[day] or 0)
+            plans[wet - 1], plans[dry - 1] = plans[dry - 1], plans[wet - 1]
+            swapped.update((wet, dry))
+    return plans
+
+
 def _minutes_from_km(distance_km: float) -> int:
     """直线距离换算成比较远近用的内部代价：起步 5 分钟，市内每公里约 3.5 分钟。"""
     return round(5 + distance_km * 3.5)
@@ -644,6 +691,7 @@ def build_itinerary(
         {option.id: option.name for option in _options(results, "attractions")},
         requirement.destination,
     )
+    day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)
     ]

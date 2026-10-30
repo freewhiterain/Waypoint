@@ -517,3 +517,21 @@ async def test_an_outlying_sight_that_keeps_breaking_travel_limits_is_dropped():
     titles = [slot.title for slot in itinerary[0].slots]
     assert "天文馆" not in titles and "武侯祠" in titles and "锦里" in titles
     assert not any("daily_travel" in w or "dinner_far" in w for w in warnings)
+
+
+def test_outdoor_day_moves_away_from_heavy_rain():
+    from app.agents.itinerary_planner import dodge_rain
+
+    options = {
+        "公园": option("公园", "attractions", type="公园"), "湖": option("湖", "attractions", type="自然风光"),
+        "博物馆": option("博物馆", "attractions", type="博物馆/纪念馆"), "美术馆": option("美术馆", "attractions", type="美术馆/艺术馆"),
+    }
+    weather = {1: "小雨 13~18℃；降水概率 90%", 2: "晴 15~22℃；降水概率 5%"}
+
+    plans = dodge_rain([["公园", "湖"], ["博物馆", "美术馆"]], options, weather, [2, 2])
+
+    assert plans == [["博物馆", "美术馆"], ["公园", "湖"]]
+    # 第二天要轻松（容量不同）时不换；两天都不下雨时不换
+    assert dodge_rain([["公园", "湖"], ["博物馆"]], options, weather, [2, 1]) == [["公园", "湖"], ["博物馆"]]
+    dry = {1: "晴；降水概率 10%", 2: "晴；降水概率 0%"}
+    assert dodge_rain([["公园", "湖"], ["博物馆", "美术馆"]], options, dry, [2, 2])[0] == ["公园", "湖"]
