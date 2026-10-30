@@ -82,12 +82,12 @@ def test_record_text_and_attributes_carry_the_structured_facts(catalog):
     assert catalog.places("成都", "hotel")[0].describe() == "住宿，特色：桑拿，参考价 353 元/晚。"
 
 
-def test_preference_matches_take_at_most_half_the_shortlist(catalog):
+def test_preference_matches_take_at_most_two_thirds_of_the_shortlist(catalog):
     names = [record.name for record in catalog.shortlist(requirement(styles=["历史"]), "attractions")]
 
-    # 8 个名额：命中"历史古迹"的最多 4 个排在前面，其余按热门程度补。
-    assert names[:4] == ["武侯祠", "冷门古迹甲", "冷门古迹乙", "冷门古迹丙"]
-    assert names[4:] == ["熊猫基地", "都江堰", "人民公园", "冷门古迹丁"]
+    # 8 个名额：命中"历史古迹"的最多 5 个排在前面，其余按热门程度补，留几个经典地标。
+    assert names[:5] == ["武侯祠", "冷门古迹甲", "冷门古迹乙", "冷门古迹丙", "冷门古迹丁"]
+    assert names[5:] == ["熊猫基地", "都江堰", "人民公园"]
 
 
 def test_dinner_shortlist_drops_teahouses_early_closers_and_spicy_food_when_asked(catalog):

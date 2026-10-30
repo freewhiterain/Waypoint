@@ -31,3 +31,11 @@ def test_thai_style_food_is_spicy_for_people_who_avoid_spice():
 
     assert not _suits_dinner(thai, requirement)
     assert _suits_dinner(thai, requirement.model_copy(update={"food_preferences": []}))
+
+
+def test_vegetarian_restaurants_only_for_people_who_asked():
+    veg = PlaceRecord(city="上海", category="food", rank=1, name="宁国素斋", type="素食")
+    requirement = TravelRequirement(destination="上海", departure_date=DAY, days=1)
+
+    assert not _suits_dinner(veg, requirement)
+    assert _suits_dinner(veg, requirement.model_copy(update={"food_preferences": ["吃素"]}))

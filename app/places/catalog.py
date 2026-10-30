@@ -219,8 +219,9 @@ class PlaceCatalog:
         records = [record for record in records if record not in named]
         night_extra = [record for record in night_extra if record not in named]
         matched = [record for record in records if _matches(record, keywords)]
-        # 偏好命中的最多占一半，其余仍按热门程度取，避免"喜欢历史"就排满冷门古迹。
-        preferred = matched[: limit // 2]
+        # 偏好命中的最多占三分之二，其余仍按热门程度取：用户说"喜欢博物馆"，大部分就该是博物馆，
+        # 但也别排满冷门小馆，留几个经典地标。
+        preferred = matched[: limit * 2 // 3]
         chosen = {record.id for record in preferred}
         rest = [record for record in records if record.id not in chosen][: limit - len(preferred)]
         picked = named + preferred + rest + night_extra
@@ -347,6 +348,9 @@ def _local_first(records: list[PlaceRecord], city: str) -> list[PlaceRecord]:
 
 def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:
     if record.type in _NOT_A_MEAL:
+        return False
+    # 素食馆只给说了吃素的人：没提忌口却排素斋，评审和用户都会觉得莫名其妙。
+    if record.type == "素食" and not any("素" in item for item in [*requirement.food_preferences, *requirement.styles]):
         return False
     if any("不吃辣" in item or "不能吃辣" in item for item in requirement.food_preferences) and (
         record.type in _SPICY

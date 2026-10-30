@@ -809,11 +809,21 @@ def _fits(option: CandidateOption, period: str) -> bool:
     return (latest_open is None or window[0] <= latest_open) and (earliest_close is None or window[1] >= earliest_close)
 
 
+_MORNING_WORDS = ("熊猫", "动物园", "野生动物", "早市")
+
+
+def _morning_best(option: CandidateOption) -> bool:
+    """动物上午最活跃（熊猫基地下午基本在睡），这类地点尽量排上午。"""
+    return any(word in option.name for word in _MORNING_WORDS)
+
+
 def _assign_periods(places: list[CandidateOption]) -> dict[str, CandidateOption]:
     """按路程排好顺序的当天景点 → 上午 / 下午。开放时间对不上时调换，或者把唯一的景点放到下午。"""
     if len(places) >= 2:
         first, second = places[0], places[1]
         if not (_fits(first, "morning") and _fits(second, "afternoon")) and _fits(second, "morning") and _fits(first, "afternoon"):
+            first, second = second, first
+        elif _morning_best(second) and not _morning_best(first) and _fits(second, "morning") and _fits(first, "afternoon"):
             first, second = second, first
         return {"morning": first, "afternoon": second}
     if len(places) == 1:

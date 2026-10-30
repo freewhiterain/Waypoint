@@ -535,3 +535,11 @@ def test_outdoor_day_moves_away_from_heavy_rain():
     assert dodge_rain([["公园", "湖"], ["博物馆"]], options, weather, [2, 1]) == [["公园", "湖"], ["博物馆"]]
     dry = {1: "晴；降水概率 10%", 2: "晴；降水概率 0%"}
     assert dodge_rain([["公园", "湖"], ["博物馆", "美术馆"]], options, dry, [2, 2])[0] == ["公园", "湖"]
+
+
+def test_pandas_go_in_the_morning():
+    from app.agents.itinerary_planner import _assign_periods
+
+    periods = _assign_periods([option("成都博物馆", "attractions"), option("成都大熊猫繁育研究基地", "attractions")])
+
+    assert periods["morning"].name == "成都大熊猫繁育研究基地"
