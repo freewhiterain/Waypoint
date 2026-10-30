@@ -154,3 +154,55 @@ async def test_searxng_requests_are_spaced_out(monkeypatch):
     await asyncio.gather(*(throttle.wait(0.05) for _ in range(3)))
 
     assert time.monotonic() - started >= 0.1
+
+
+class _FakeRedis:
+    def __init__(self, broken=False):
+        self.store, self.ttls, self.broken = {}, {}, broken
+
+    async def get(self, key):
+        if self.broken:
+            raise ConnectionError("redis down")
+        return self.store.get(key)
+
+    async def set(self, key, value, ex):
+        if self.broken:
+            raise ConnectionError("redis down")
+        self.store[key], self.ttls[key] = value, ex
+
+
+def _cache(fake):
+    cache = search_module.RedisSearchCache(url="redis://unused")
+    cache._client = fake
+    return cache
+
+
+@pytest.mark.asyncio
+async def test_a_cached_query_does_not_hit_the_search_source_again():
+    from datetime import datetime, timedelta, timezone
+
+    class Fresh(_Adapter):
+        async def search(self, query, max_results=5):
+            self.calls.append(query)
+            return [Evidence(content=f"{query} 结果", source="s", source_url="https://s.test",
+                             valid_until=datetime.now(timezone.utc) + timedelta(hours=2))]
+
+    source, fake = Fresh("searxng"), _FakeRedis()
+    adapter = search_module.FallbackSearchAdapter([source], cache=_cache(fake))
+
+    first = await adapter.search("西安 兵马俑")
+    second = await adapter.search("西安 兵马俑")
+
+    assert source.calls == ["西安 兵马俑"]
+    assert [item.content for item in second] == [item.content for item in first]
+    assert 7000 < next(iter(fake.ttls.values())) <= 7200  # 不超过证据自己的有效期
+
+
+@pytest.mark.asyncio
+async def test_search_still_works_when_redis_is_down():
+    source = _Adapter("searxng")
+    adapter = search_module.FallbackSearchAdapter([source], cache=_cache(_FakeRedis(broken=True)))
+
+    results = await adapter.search("西安 景点")
+
+    assert [item.content for item in results] == ["searxng:西安 景点"]

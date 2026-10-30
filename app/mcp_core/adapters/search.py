@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
@@ -12,6 +14,7 @@ import httpx
 from app.config import settings
 from app.mcp_core.reliability import ExternalServiceError, ResilientExecutor
 from app.schemas.planning import Evidence
+from app.utils.logger import app_logger
 
 
 class TavilySearchAdapter:
@@ -143,19 +146,83 @@ class SearchAdapter(Protocol):
     async def search(self, query: str, max_results: int = 5) -> list[Evidence]: ...
 
 
+class RedisSearchCache:
+    """把搜索结果存进 Redis，重启后、多次规划同一城市时不再重复打搜索引擎。
+
+    地点库外的城市全靠联网搜索，SearXNG 上游一被并发请求就弹验证码；同一个查询
+    几小时内结果不会变。缓存时长不超过证据自己的有效期（valid_until），过期证据
+    下游本来就会丢掉，存得再久也没用。Redis 不可用时静默跳过，一分钟后再试。
+    """
+
+    PREFIX = "waypoint:search:"
+    MAX_TTL_SECONDS = 6 * 3600
+    RETRY_AFTER_SECONDS = 60
+
+    def __init__(self, url: str | None = None):
+        self.url = url or settings.redis_url
+        self._client = None
+        self._down_until = 0.0
+
+    def _key(self, query: str, max_results: int) -> str:
+        return self.PREFIX + hashlib.sha1(f"{max_results}:{query}".encode()).hexdigest()
+
+    async def _redis(self):
+        if time.monotonic() < self._down_until:
+            return None
+        if self._client is None:
+            import redis.asyncio as redis
+
+            self._client = redis.from_url(self.url, socket_timeout=1, socket_connect_timeout=1)
+        return self._client
+
+    def _mark_down(self, exc: Exception) -> None:
+        app_logger.warning(f"搜索缓存不可用，暂时直接搜索: {type(exc).__name__}: {exc}")
+        self._down_until = time.monotonic() + self.RETRY_AFTER_SECONDS
+
+    async def get(self, query: str, max_results: int) -> list[Evidence] | None:
+        try:
+            client = await self._redis()
+            raw = await client.get(self._key(query, max_results)) if client else None
+        except Exception as exc:
+            self._mark_down(exc)
+            return None
+        return [Evidence.model_validate(item) for item in json.loads(raw)] if raw else None
+
+    async def set(self, query: str, max_results: int, results: list[Evidence]) -> None:
+        now = datetime.now(timezone.utc)
+        expiries = [item.valid_until for item in results if item.valid_until is not None]
+        ttl = min([self.MAX_TTL_SECONDS, *((expiry - now).total_seconds() for expiry in expiries)])
+        if not results or ttl < 60:
+            return
+        try:
+            client = await self._redis()
+            if client:
+                payload = json.dumps([item.model_dump(mode="json") for item in results], ensure_ascii=False)
+                await client.set(self._key(query, max_results), payload, ex=int(ttl))
+        except Exception as exc:
+            self._mark_down(exc)
+
+
 class FallbackSearchAdapter:
     """按顺序尝试多个搜索源：前一个报错（未配置、额度用完、超时）就换下一个。"""
 
-    def __init__(self, adapters: list[SearchAdapter]):
+    def __init__(self, adapters: list[SearchAdapter], cache: RedisSearchCache | None = None):
         self.adapters = adapters
+        self.cache = cache
 
     async def search(self, query: str, max_results: int = 5) -> list[Evidence]:
+        if self.cache is not None and (cached := await self.cache.get(query, max_results)) is not None:
+            return cached
         last_error: Exception | None = None
         for adapter in self.adapters:
             try:
-                return await adapter.search(query, max_results)
+                results = await adapter.search(query, max_results)
             except Exception as exc:
                 last_error = exc
+                continue
+            if self.cache is not None:
+                await self.cache.set(query, max_results, results)
+            return results
         raise ExternalServiceError(f"所有搜索源都不可用：{type(last_error).__name__ if last_error else '未配置'}")
 
 
@@ -166,4 +233,4 @@ def default_search_adapter() -> FallbackSearchAdapter | None:
         adapters.append(TavilySearchAdapter())
     if settings.searxng_url:
         adapters.append(SearxngSearchAdapter())
-    return FallbackSearchAdapter(adapters) if adapters else None
+    return FallbackSearchAdapter(adapters, cache=RedisSearchCache()) if adapters else None
