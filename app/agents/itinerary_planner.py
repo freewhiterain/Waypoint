@@ -759,11 +759,14 @@ def _pick_nearby(pool: list[str], used: set[str], near: str, costs: TravelCosts,
 
 
 def _pick_lunch(
-    pool: list[str], used: set[str], near: str, costs: TravelCosts, options: dict[str, CandidateOption], city: str
+    pool: list[str], used: set[str], near: str, costs: TravelCosts, options: dict[str, CandidateOption], city: str,
+    after: str | None = None,
 ) -> str | None:
-    """午餐在上午景点附近（MAX_LUNCH_MINUTES 内）挑：当地菜和小吃优先，其次看远近。
+    """午餐在上午景点附近（MAX_LUNCH_MINUTES 内）挑：当地菜和小吃优先，其次看绕路多少。
 
     原来只挑最近的，成都中午吃粤菜、重庆中午吃 186 元的西餐，评审说不像专程来吃当地菜的。
+    绕路 = 上午景点 → 午餐 → 下午景点 比直接过去多走的路：离上午近、却在反方向的店
+    （熊猫基地附近的东北郊火锅，下午再横穿回市区）会被排到后面。
     """
     nearby = [
         place_id for place_id in pool
@@ -771,8 +774,13 @@ def _pick_lunch(
     ]
     if not nearby:
         return None
+    def detour(place_id: str) -> int:
+        if after is None:
+            return costs.cost(near, place_id)
+        return costs.cost(near, place_id) + costs.cost(place_id, after) - costs.cost(near, after)
+
     return min(nearby, key=lambda place_id: (
-        not is_local_food(city, str(options[place_id].attributes.get("type") or "")), costs.cost(near, place_id),
+        not is_local_food(city, str(options[place_id].attributes.get("type") or "")), detour(place_id),
     ))
 
 
@@ -888,7 +896,8 @@ def build_itinerary(
                     previous = option.id
                 continue
             if period == "afternoon" and previous is not None and periods.get("morning") is not None:
-                lunch_id = _pick_lunch(lunch_pool, used_dinners, previous, costs, options, requirement.destination)
+                after = option.id if option is not None else None
+                lunch_id = _pick_lunch(lunch_pool, used_dinners, previous, costs, options, requirement.destination, after)
                 if lunch_id is not None:
                     eat_at(lunch_id)
                     slots.append(_slot("lunch", options[lunch_id], costs.known(previous, lunch_id)))

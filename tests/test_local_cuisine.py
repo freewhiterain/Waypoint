@@ -66,3 +66,23 @@ def test_lunch_prefers_local_food_within_reach():
         leg("武侯祠", "粤菜馆", 5), leg("武侯祠", "川菜馆", 20), leg("武侯祠", "远川菜", 50)])])
 
     assert _pick_lunch(list(options), set(), "武侯祠", costs, options, "成都") == "川菜馆"
+
+
+def test_lunch_avoids_a_place_in_the_opposite_direction():
+    from app.agents.itinerary_planner import TravelCosts, _pick_lunch
+    from app.schemas.planning import CandidateOption, WorkerResult
+
+    def food(name):
+        return CandidateOption(id=name, name=name, category="food", description="", evidence_ids=["e"],
+                               attributes={"type": "火锅"})
+
+    def leg(a, b, minutes):
+        return CandidateOption(id=f"{a}-{b}", name=f"{a}-{b}", category="travel_leg", description="",
+                               evidence_ids=["e"], attributes={"from_id": a, "to_id": b, "minutes": minutes})
+
+    options = {"郊区火锅": food("郊区火锅"), "顺路火锅": food("顺路火锅")}
+    costs = TravelCosts([WorkerResult(task_id="t", worker="transport", status="completed", summary="", options=[
+        leg("熊猫基地", "郊区火锅", 10), leg("郊区火锅", "川剧院", 59),
+        leg("熊猫基地", "顺路火锅", 20), leg("顺路火锅", "川剧院", 20), leg("熊猫基地", "川剧院", 35)])])
+
+    assert _pick_lunch(list(options), set(), "熊猫基地", costs, options, "成都", after="川剧院") == "顺路火锅"
