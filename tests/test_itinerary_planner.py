@@ -484,3 +484,19 @@ async def test_a_theme_park_takes_the_whole_day():
     assert "一整天" in sights[0].description
     other = next(day for day in itinerary if day is not park_day)
     assert {"武侯祠", "锦里"} <= {slot.title for slot in other.slots}
+
+
+@pytest.mark.asyncio
+async def test_a_hotel_far_from_the_chosen_sights_is_replaced_by_a_closer_one():
+    far_legs = [leg("郊区酒店", "武侯祠", 60), leg("郊区酒店", "锦里", 62)]
+    results = chengdu_results(LEGS + far_legs)
+    hotels = next(item for item in results if item.worker == "hotel")
+    hotels.options.append(option("郊区酒店", "hotel"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="郊区酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1), results, llm=llm)
+
+    assert any(note.startswith("住宿：武侯酒店") for note in itinerary[0].notes)

@@ -66,7 +66,7 @@ MAX_DINNER_MINUTES = 45
 # 午餐时段要开着：11:30 前开门、13:30 后才关门。
 _LUNCH_WINDOW = (11 * 60 + 30, 13 * 60 + 30)
 # 晚饭要在这段时间营业：只做午市、下午四点半就打烊的自助餐不能排成晚饭。
-_DINNER_WINDOW = (18 * 60, 19 * 60 + 30)
+_DINNER_WINDOW = (18 * 60, 20 * 60)
 
 
 class SelectedPlace(BaseModel):
@@ -374,6 +374,30 @@ def same_place(first: str, second: str, city: str = "") -> bool:
         return True
     a, b = _core_name(first, city), _core_name(second, city)
     return len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first))
+
+
+# 模型选的酒店到所选景点的平均路程比最近的那家多出这么多（分钟量级），就换成最近的。
+HOTEL_DETOUR_MINUTES = 15
+
+
+def closer_hotel(selection: PlaceSelection, results: list[WorkerResult], costs: TravelCosts) -> str | None:
+    """模型选的酒店离当天要去的地方明显更远时，换成平均路程最短的候选。
+
+    有预算后便宜的酒店多在郊区（上海川沙、虹桥），模型挑了便宜的，
+    每天早上先开一小时车进城。候选已按预算筛过，换哪家都住得起。
+    """
+    hotels = _options(results, "hotel")
+    sights = [item.id for item in selection.attractions]
+    if not hotels or not sights:
+        return selection.hotel_id
+
+    def mean_cost(hotel_id: str) -> float:
+        return sum(costs.cost(hotel_id, sight) for sight in sights) / len(sights)
+
+    best = min(hotels, key=lambda option: mean_cost(option.id)).id
+    if selection.hotel_id is None or mean_cost(selection.hotel_id) - mean_cost(best) > HOTEL_DETOUR_MINUTES:
+        return best
+    return selection.hotel_id
 
 
 def _must_visit_options(results: list[WorkerResult], worker: str, requirement: TravelRequirement) -> list[CandidateOption]:
@@ -947,6 +971,7 @@ async def plan_itinerary(
             hotel = next(iter(_options(results, "hotel")), None)
         else:
             selection, round_warnings = _sanitize(selection, requirement, results)
+            selection = selection.model_copy(update={"hotel_id": closer_hotel(selection, results, costs)})
             itinerary = build_itinerary(requirement, results, selection, costs)
             hotel = next((option for option in _options(results, "hotel") if option.id == selection.hotel_id), None)
         warnings.extend(round_warnings)
