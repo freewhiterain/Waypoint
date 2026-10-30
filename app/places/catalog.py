@@ -203,6 +203,8 @@ class PlaceCatalog:
                 and (price_cap is None or record.price is None or record.price <= price_cap)
             ]
             keywords = [*requirement.food_preferences, *requirement.styles]
+            if not _wants_upscale(requirement):  # 点名要高档时按用户的意思，不再把家常菜提前
+                records = _local_first(records, requirement.destination)
         else:
             # 夜景、夜游类地点排程时只会放进晚饭后的夜间时段：不占白天景点的名额，
             # 用户想看夜景时另外追加几个，没说时不要。
@@ -275,6 +277,9 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
     return any(keyword and (keyword in text or _STYLE_ALIASES.get(keyword, "\0") in text) for keyword in keywords)
 
 
+_SPICY_DISH_WORDS = ("冷吃", "辣", "冬阴功")
+
+
 def _mostly_spicy(recommended_food: str) -> bool:
     """推荐菜里有两道以上、或一半以上带辣味词，就算主打辣。
 
@@ -282,7 +287,7 @@ def _mostly_spicy(recommended_food: str) -> bool:
     5 道里 2 道明确是辣的，其余也多是辣做法。
     """
     dishes = [dish for dish in recommended_food.split(",") if dish.strip()]
-    spicy = [dish for dish in dishes if any(word in dish for word in (*_SPICY_NAME_WORDS, "冷吃", "辣"))]
+    spicy = [dish for dish in dishes if any(word in dish for word in (*_SPICY_NAME_WORDS, *_SPICY_DISH_WORDS))]
     return len(spicy) >= 2 or (bool(dishes) and len(spicy) * 2 >= len(dishes))
 
 
@@ -326,6 +331,20 @@ def _wants_upscale(requirement: TravelRequirement) -> bool:
     return any(word in text for word in _UPSCALE_WORDS)
 
 
+# 各城市的本地菜系。热门榜上西餐很多（上海 131 家排第一），出门旅行的人多半想吃当地菜：
+# 本地菜和小吃排在前面，用户点名要吃别的（"想吃日料"）时偏好命中仍优先。
+_LOCAL_CUISINE = {
+    "杭州": ("江浙菜",), "苏州": ("江浙菜",), "南京": ("江浙菜",), "上海": ("本帮菜", "江浙菜"),
+    "重庆": ("火锅", "川菜"), "成都": ("川菜", "火锅"), "广州": ("粤菜",), "深圳": ("粤菜", "海鲜"),
+    "北京": ("北京菜",), "武汉": ("湖北菜",),
+}
+
+
+def _local_first(records: list[PlaceRecord], city: str) -> list[PlaceRecord]:
+    local = (*_LOCAL_CUISINE.get(normalize_city(city), ()), "小吃")
+    return sorted(records, key=lambda record: record.type not in local)
+
+
 def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:
     if record.type in _NOT_A_MEAL:
         return False
@@ -333,6 +352,8 @@ def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:
         record.type in _SPICY
         or any(word in record.name for word in _SPICY_NAME_WORDS)
         or _mostly_spicy(record.recommended_food)
+        # 东南亚菜招牌常是冬阴功、酸辣汤，有一道就当辣：带不吃辣的长辈去，点不了几个菜。
+        or (record.type == "东南亚菜" and any(word in record.recommended_food for word in _SPICY_DISH_WORDS))
     ):
         return False
     # 晚餐时段要开着：19 点以后才关门，或者营业到第二天凌晨。

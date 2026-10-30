@@ -92,7 +92,8 @@ def test_preference_matches_take_at_most_half_the_shortlist(catalog):
 
 def test_dinner_shortlist_drops_teahouses_early_closers_and_spicy_food_when_asked(catalog):
     names = [record.name for record in catalog.shortlist(requirement(), "food")]
-    assert names == ["马旺子", "粤菜馆", "深夜烧烤", "泰式海鲜火锅", "兔头店"]
+    # 当地菜（川菜）和小吃排在前面，其余按热门程度
+    assert names == ["马旺子", "兔头店", "粤菜馆", "深夜烧烤", "泰式海鲜火锅"]
 
     mild = [record.name for record in catalog.shortlist(requirement(food_preferences=["不吃辣"]), "food")]
     assert mild == ["粤菜馆", "深夜烧烤"]
