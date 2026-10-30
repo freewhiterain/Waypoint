@@ -39,3 +39,30 @@ def test_vegetarian_restaurants_only_for_people_who_asked():
 
     assert not _suits_dinner(veg, requirement)
     assert _suits_dinner(veg, requirement.model_copy(update={"food_preferences": ["吃素"]}))
+
+
+def test_sichuan_snacks_with_dandan_noodles_count_as_spicy():
+    snacks = PlaceRecord(city="成都", category="food", rank=1, name="某小吃店", type="小吃",
+                         recommended_food="担担面,钵钵鸡,伤心凉粉,糖油果子")
+    requirement = TravelRequirement(destination="成都", departure_date=DAY, days=1, food_preferences=["不吃辣"])
+
+    assert not _suits_dinner(snacks, requirement)
+
+
+def test_lunch_prefers_local_food_within_reach():
+    from app.agents.itinerary_planner import TravelCosts, _pick_lunch
+    from app.schemas.planning import CandidateOption, WorkerResult
+
+    def food(name, cuisine):
+        return CandidateOption(id=name, name=name, category="food", description="", evidence_ids=["e"],
+                               attributes={"type": cuisine})
+
+    def leg(a, b, minutes):
+        return CandidateOption(id=f"{a}-{b}", name=f"{a}-{b}", category="travel_leg", description="",
+                               evidence_ids=["e"], attributes={"from_id": a, "to_id": b, "minutes": minutes})
+
+    options = {"粤菜馆": food("粤菜馆", "粤菜"), "川菜馆": food("川菜馆", "川菜"), "远川菜": food("远川菜", "川菜")}
+    costs = TravelCosts([WorkerResult(task_id="t", worker="transport", status="completed", summary="", options=[
+        leg("武侯祠", "粤菜馆", 5), leg("武侯祠", "川菜馆", 20), leg("武侯祠", "远川菜", 50)])])
+
+    assert _pick_lunch(list(options), set(), "武侯祠", costs, options, "成都") == "川菜馆"

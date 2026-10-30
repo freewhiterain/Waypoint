@@ -291,7 +291,8 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
     return any(keyword and (keyword in text or _STYLE_ALIASES.get(keyword, "\0") in text) for keyword in keywords)
 
 
-_SPICY_DISH_WORDS = ("冷吃", "辣", "冬阴功")
+# 推荐菜里看得出是辣的："担担面""伤心凉粉""口水鸡""水煮鱼""毛血旺"名字里都没有"辣"字。
+_SPICY_DISH_WORDS = ("冷吃", "辣", "冬阴功", "担担", "凉粉", "红油", "水煮", "口水", "毛血旺", "剁椒", "麻婆")
 
 
 def _mostly_spicy(recommended_food: str) -> bool:
@@ -354,9 +355,12 @@ _LOCAL_CUISINE = {
 }
 
 
+def is_local_food(city: str, cuisine: str) -> bool:
+    return cuisine in (*_LOCAL_CUISINE.get(normalize_city(city), ()), "小吃")
+
+
 def _local_first(records: list[PlaceRecord], city: str) -> list[PlaceRecord]:
-    local = (*_LOCAL_CUISINE.get(normalize_city(city), ()), "小吃")
-    return sorted(records, key=lambda record: record.type not in local)
+    return sorted(records, key=lambda record: not is_local_food(city, record.type))
 
 
 def _suits_dinner(record: PlaceRecord, requirement: TravelRequirement) -> bool:

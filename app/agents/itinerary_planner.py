@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.trip_cost import estimate_trip_cost
 from app.core.llm import describe_llm_failure
-from app.places.catalog import named_by, straight_line_km
+from app.places.catalog import is_local_food, named_by, straight_line_km
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -723,6 +723,24 @@ def _pick_nearby(pool: list[str], used: set[str], near: str, costs: TravelCosts,
     return best if costs.cost(near, best) <= max_minutes else None
 
 
+def _pick_lunch(
+    pool: list[str], used: set[str], near: str, costs: TravelCosts, options: dict[str, CandidateOption], city: str
+) -> str | None:
+    """午餐在上午景点附近（MAX_LUNCH_MINUTES 内）挑：当地菜和小吃优先，其次看远近。
+
+    原来只挑最近的，成都中午吃粤菜、重庆中午吃 186 元的西餐，评审说不像专程来吃当地菜的。
+    """
+    nearby = [
+        place_id for place_id in pool
+        if place_id not in used and costs.cost(near, place_id) <= MAX_LUNCH_MINUTES
+    ]
+    if not nearby:
+        return None
+    return min(nearby, key=lambda place_id: (
+        not is_local_food(city, str(options[place_id].attributes.get("type") or "")), costs.cost(near, place_id),
+    ))
+
+
 def build_itinerary(
     requirement: TravelRequirement,
     results: list[WorkerResult],
@@ -810,7 +828,7 @@ def build_itinerary(
                     previous = option.id
                 continue
             if period == "afternoon" and previous is not None and periods.get("morning") is not None:
-                lunch_id = _pick_nearby(lunch_pool, used_dinners, previous, costs, MAX_LUNCH_MINUTES)
+                lunch_id = _pick_lunch(lunch_pool, used_dinners, previous, costs, options, requirement.destination)
                 if lunch_id is not None:
                     eat_at(lunch_id)
                     slots.append(_slot("lunch", options[lunch_id], costs.known(previous, lunch_id)))
