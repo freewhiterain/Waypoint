@@ -571,6 +571,52 @@ def assign_days(
     return [_best_order(day_places, hotel_id, costs) for day_places in plan]
 
 
+def _day_cost(plan: list[str], hotel_id: str | None, costs: TravelCosts) -> int:
+    """从住处出发、按顺序走完当天景点的路程（取两种走法里短的那个）。"""
+    def walk(order: list[str]) -> int:
+        stops = [hotel_id, *order] if hotel_id else order
+        return sum(costs.cost(first, second) for first, second in zip(stops, stops[1:]))
+
+    return min(walk(plan), walk(plan[::-1])) if plan else 0
+
+
+def regroup_days(
+    day_plans: list[list[str]], fixed: set[str], hotel_id: str | None, costs: TravelCosts, max_swaps: int = 20
+) -> list[list[str]]:
+    """贪心分天之后做局部调整：两天之间对调景点，总路程变短就保留，直到找不到更好的对调。
+
+    贪心从离住处最近的开始一天天凑，排在后面的几天只能拿剩下的，常常横跨半个城。
+    指定了日子的（preferred_day、整天的乐园）不动；只做对调，每天的景点数不变。
+    """
+    plans = [list(plan) for plan in day_plans]
+
+    def better_swap() -> tuple[int, int, int, int] | None:
+        for first in range(len(plans)):
+            for second in range(first + 1, len(plans)):
+                before = _day_cost(plans[first], hotel_id, costs) + _day_cost(plans[second], hotel_id, costs)
+                for i, a in enumerate(plans[first]):
+                    for j, b in enumerate(plans[second]):
+                        if a in fixed or b in fixed:
+                            continue
+                        new_first = plans[first][:i] + [b] + plans[first][i + 1:]
+                        new_second = plans[second][:j] + [a] + plans[second][j + 1:]
+                        if _day_cost(new_first, hotel_id, costs) + _day_cost(new_second, hotel_id, costs) < before:
+                            return first, i, second, j
+        return None
+
+    for _ in range(max_swaps):
+        swap = better_swap()
+        if swap is None:
+            break
+        first, i, second, j = swap
+        plans[first][i], plans[second][j] = plans[second][j], plans[first][i]
+    # 每天内部取路程更短的那个方向
+    return [
+        plan if _day_cost(plan, hotel_id, costs) <= _day_cost(plan[::-1], hotel_id, costs) else plan[::-1]
+        for plan in plans
+    ]
+
+
 def top_up_days(
     day_plans: list[list[str]],
     candidate_ids: list[str],
@@ -691,6 +737,7 @@ def build_itinerary(
         {option.id: option.name for option in _options(results, "attractions")},
         requirement.destination,
     )
+    day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
     day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)

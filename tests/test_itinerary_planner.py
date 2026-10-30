@@ -543,3 +543,16 @@ def test_pandas_go_in_the_morning():
     periods = _assign_periods([option("成都博物馆", "attractions"), option("成都大熊猫繁育研究基地", "attractions")])
 
     assert periods["morning"].name == "成都大熊猫繁育研究基地"
+
+
+def test_regrouping_puts_nearby_sights_on_the_same_day():
+    from app.agents.itinerary_planner import regroup_days
+
+    costs = TravelCosts(chengdu_results(LEGS))
+    # 贪心给出的"一南一北"两天：武侯祠+熊猫基地、锦里+宽窄巷子
+    plans = regroup_days([["武侯祠", "熊猫基地"], ["锦里", "宽窄巷子"]], set(), "武侯酒店", costs)
+
+    assert sorted(map(sorted, plans)) == [["宽窄巷子", "熊猫基地"], ["武侯祠", "锦里"]]
+    # 指定了日子的不动
+    assert regroup_days([["武侯祠", "熊猫基地"], ["锦里", "宽窄巷子"]], {"熊猫基地", "武侯祠"}, "武侯酒店", costs)[0] \
+        == ["武侯祠", "熊猫基地"]
