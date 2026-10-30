@@ -12,6 +12,7 @@ from app.schemas.planning import CandidateOption, ItineraryDay, TimeSlot, Travel
 from app.schemas.slots import SlotUpdate, TripSlots
 from app.services.slots import apply_slot_update
 from tests.test_itinerary_planner import LEGS, FakeLLM, chengdu_results
+from tests.test_itinerary_planner import leg as leg_to
 
 TODAY = date(2026, 10, 30)
 SLOTS = TripSlots(destination="成都", departure_date=date(2026, 11, 2), days=2)
@@ -92,3 +93,32 @@ def test_plan_check_flags_an_over_budget_plan():
     day = ItineraryDay(day=1, date=TODAY, slots=[TimeSlot(period="evening", title="饭馆", estimated_cost=150)])
 
     assert any("超出预算" in issue.message for issue in check_plan(requirement, [day]))
+
+
+@pytest.mark.asyncio
+async def test_when_the_model_cannot_fit_the_budget_meals_are_swapped_for_cheaper_ones():
+    results = chengdu_results(LEGS + [leg_to("锦里", "小吃", 15)])
+    food = next(item for item in results if item.worker == "food")
+    food.options[0] = food.options[0].model_copy(update={"estimated_cost": 400})  # 火锅
+    food.options[1] = food.options[1].model_copy(update={"estimated_cost": 40})   # 小吃
+    requirement = TravelRequirement(destination="成都", departure_date=date(2026, 11, 14), days=1, budget=100)
+    pricey = PlaceSelection(hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+                            dinners=[SelectedPlace(id="火锅")])
+
+    itinerary, warnings = await plan_itinerary(requirement, results, llm=FakeLLM([pricey] * 3))
+
+    assert itinerary[0].slots[-1].title == "小吃"
+    assert not any(w.startswith("itinerary_constraint:budget") for w in warnings)
+
+
+def test_food_shortlist_includes_a_restaurant_near_outlying_sights():
+    catalog = PlaceCatalog()
+    requirement = TravelRequirement(destination="上海", departure_date=TODAY, days=3, budget=2000)
+    disney = next(record for record in catalog.places("上海", "attractions") if record.name == "上海迪士尼度假区")
+
+    food = catalog.shortlist(requirement, "food")
+
+    from app.places.catalog import straight_line_km
+    assert any(straight_line_km((disney.latitude, disney.longitude), (r.latitude, r.longitude)) <= 5
+               for r in food if r.latitude is not None)
+    assert all(record.price is None or record.price <= 2000 * 0.3 / 3 for record in food)
