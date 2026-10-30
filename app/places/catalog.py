@@ -221,7 +221,37 @@ class PlaceCatalog:
         preferred = matched[: limit // 2]
         chosen = {record.id for record in preferred}
         rest = [record for record in records if record.id not in chosen][: limit - len(preferred)]
-        return named + preferred + rest + night_extra
+        picked = named + preferred + rest + night_extra
+        if category == "food":
+            picked += self._near_attractions(requirement, records, picked)
+        return picked
+
+    def _near_attractions(
+        self, requirement: TravelRequirement, eligible: list[PlaceRecord], picked: list[PlaceRecord]
+    ) -> list[PlaceRecord]:
+        """每个候选景点附近补一家符合条件的餐厅。
+
+        热门餐厅多在市中心；一天玩到郊区的海洋公园、迪士尼，晚饭只能跑回市中心，
+        路上一个多小时。有预算时贵的被筛掉，候选更少、更集中，问题更明显。
+        """
+        chosen = {record.id for record in picked}
+        extra: list[PlaceRecord] = []
+        located = [record for record in eligible if record.latitude is not None and record.longitude is not None]
+        for sight in self.shortlist(requirement, "attractions"):
+            if sight.latitude is None or sight.longitude is None:
+                continue
+            here = (sight.latitude, sight.longitude)
+            nearby = [
+                (straight_line_km(here, (record.latitude, record.longitude)), record)
+                for record in located
+                if record.id not in chosen
+            ]
+            nearby = [item for item in nearby if item[0] <= _NEAR_SIGHT_KM]
+            if nearby:
+                _, record = min(nearby, key=lambda item: item[0])
+                chosen.add(record.id)
+                extra.append(record)
+        return extra
 
 
 _PARENTHESES = re.compile(r"[(（]([^)）]*)[)）]")
@@ -256,6 +286,8 @@ def _mostly_spicy(recommended_food: str) -> bool:
     return len(spicy) >= 2 or (bool(dishes) and len(spicy) * 2 >= len(dishes))
 
 
+# 给景点配附近餐厅时的直线距离上限（公里）。
+_NEAR_SIGHT_KM = 5.0
 # 有预算时给住宿、餐饮各留的份额（剩下给门票和机动）。每晚房费、每人每天餐费不超过这份额。
 _HOTEL_SHARE, _MEAL_SHARE = 0.45, 0.3
 _MIN_AFFORDABLE_HOTELS = 3
