@@ -97,10 +97,15 @@ def main() -> int:
     llm = get_llm(temperature=0)
     rows = []
     for item in plans_from_log(Path(args.log)):
-        try:
-            judgement = judge(llm, item)
-        except Exception as exc:  # 单份评审失败不影响其余
-            print(f"[跳过] {item['name']}: {type(exc).__name__}")
+        judgement = None
+        for _attempt in range(2):  # 结构化输出偶尔不合 schema，重试一次
+            try:
+                judgement = judge(llm, item)
+                break
+            except Exception as exc:  # 单份评审失败不影响其余
+                error = exc
+        if judgement is None:
+            print(f"[跳过] {item['name']}: {type(error).__name__}")
             continue
         scores = {key: getattr(judgement, key) for key in RUBRIC}
         rows.append({
