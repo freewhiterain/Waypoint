@@ -685,7 +685,7 @@ def build_itinerary(
             option = periods.get(period)
             if whole_day:
                 if option is not None:
-                    slot = _slot(period, option, costs.minutes(previous, option.id))
+                    slot = _slot(period, option, costs.known(previous, option.id))
                     slots.append(slot.model_copy(update={"description": f"{FULL_DAY_NOTE}{slot.description}"}))
                     previous = option.id
                 continue
@@ -693,10 +693,10 @@ def build_itinerary(
                 lunch_id = _pick_nearby(lunch_pool, used_dinners, previous, costs, MAX_LUNCH_MINUTES)
                 if lunch_id is not None:
                     eat_at(lunch_id)
-                    slots.append(_slot("lunch", options[lunch_id], costs.minutes(previous, lunch_id)))
+                    slots.append(_slot("lunch", options[lunch_id], costs.known(previous, lunch_id)))
                     previous = lunch_id
             if option is not None:
-                slots.append(_slot(period, option, costs.minutes(previous, option.id)))
+                slots.append(_slot(period, option, costs.known(previous, option.id)))
                 previous = option.id
             elif period == "morning" and not periods:
                 slots.append(TimeSlot(period="morning", title=f"{requirement.destination}分区自由活动",
@@ -722,7 +722,7 @@ def build_itinerary(
                 dinner_id = nearby
         if dinner_id is not None:
             eat_at(dinner_id)
-            slots.append(_slot("evening", options[dinner_id], costs.minutes(previous, dinner_id)))
+            slots.append(_slot("evening", options[dinner_id], costs.known(previous, dinner_id)))
             previous = dinner_id
         else:
             reason = "能查到的餐厅前几晚已经安排过，这晚可以自由选择。" if used_dinners else "没有带证据的餐饮候选可安排。"
@@ -738,7 +738,7 @@ def build_itinerary(
                 for other, candidate in night_options.items()
                 if same_place(candidate.name, night_options[night_id].name, requirement.destination)
             )
-            slots.append(_slot("night", night_options[night_id], costs.minutes(previous, night_id)))
+            slots.append(_slot("night", night_options[night_id], costs.known(previous, night_id)))
 
         notes = [] if place_ids else [f"第{index + 1}天已无未使用的景点候选。"]
         itinerary.append(
@@ -909,7 +909,7 @@ def trim_to_budget(
             ]
             if cheaper:
                 best = min(cheaper, key=lambda option: (option.estimated_cost, costs.cost(previous, option.id)))
-                days[day_index].slots[slot_index] = _slot(slot.period, best, costs.minutes(previous, best.id))
+                days[day_index].slots[slot_index] = _slot(slot.period, best, costs.known(previous, best.id))
 
     def meal_fits(option: CandidateOption, period: str) -> bool:
         return _open_during(option, _LUNCH_WINDOW if period == "lunch" else _DINNER_WINDOW)
