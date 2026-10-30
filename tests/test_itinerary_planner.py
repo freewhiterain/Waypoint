@@ -434,3 +434,32 @@ async def test_two_branches_of_one_chain_are_not_both_scheduled():
 
     dinners = [day.slots[-1].title for day in itinerary]
     assert dinners[0].startswith("盛天毛血旺") and dinners[1] == "杨记隆府"
+
+
+@pytest.mark.asyncio
+async def test_a_far_away_dinner_is_swapped_for_a_nearby_one():
+    # 当天最后一站是锦里：模型选的"远店"要 90 分钟，备选"火锅"只要 12 分钟
+    results = chengdu_results(LEGS + [leg("锦里", "远店", 90), leg("锦里", "火锅", 12)])
+    food = next(item for item in results if item.worker == "food")
+    food.options.append(option("远店", "food"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="远店")],
+    )])
+
+    itinerary, warnings = await plan_itinerary(requirement(days=1), results, llm=llm)
+
+    assert itinerary[0].slots[-1].title == "火锅"
+    assert not any("dinner_far" in warning for warning in warnings)
+
+
+def test_a_far_dinner_with_no_nearby_backup_is_a_violation():
+    from app.agents.itinerary_planner import check_itinerary
+    from app.schemas.planning import ItineraryDay, TimeSlot
+
+    day = ItineraryDay(day=1, date=date(2026, 11, 14), slots=[
+        TimeSlot(period="evening", title="远店", travel_minutes=90)])
+
+    violations = check_itinerary(requirement(days=1), chengdu_results(LEGS), [day])
+
+    assert [item.code for item in violations] == ["dinner_far"]

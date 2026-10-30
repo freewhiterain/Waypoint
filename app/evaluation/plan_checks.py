@@ -49,6 +49,8 @@ _STATED_PRICE = re.compile(r"(?:门票|人均)\s*(\d+(?:\.\d+)?)\s*元")
 _PLACEHOLDER_PREFIXES = ("自由", )
 _SIGHT_PERIODS = ("morning", "afternoon")
 _MEAL_PERIODS = ("lunch", "evening")
+# 评测比排程宽一点：排程超过 45 分钟就换，评测只抓一小时以上明显不合理的。
+_MAX_MEAL_HOP_MINUTES = 60
 
 
 def _is_placeholder(title: str, city: str) -> bool:
@@ -109,6 +111,9 @@ def check_plan(
             if window and needs and (window[0] > needs[0] or window[1] < needs[1]):
                 logic(f"第{day.day}天{slot.period}「{slot.title}」营业 {slot.opening_window}，时段对不上")
 
+        for slot in day.slots:
+            if slot.period in _MEAL_PERIODS and (slot.travel_minutes or 0) > _MAX_MEAL_HOP_MINUTES:
+                logic(f"第{day.day}天去「{slot.title}」吃饭路上约 {slot.travel_minutes} 分钟")
         if not any(slot.period == "evening" for slot in day.slots):
             logic(f"第{day.day}天没有晚饭")
         sights = [slot for slot in places if slot.period in _SIGHT_PERIODS]

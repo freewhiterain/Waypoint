@@ -61,6 +61,8 @@ _FOOD_STYLE_WORDS = ("吃", "火锅", "烧烤", "海鲜", "烤鸭", "早茶", "�
 MAX_LUNCH_MINUTES = 30
 # 晚饭后去看夜景，路上最多能接受的代价。
 MAX_NIGHT_MINUTES = 45
+# 从当天最后一站到晚饭，超过这个代价就换附近的备选，换不了就反馈给模型重选。
+MAX_DINNER_MINUTES = 45
 # 午餐时段要开着：11:30 前开门、13:30 后才关门。
 _LUNCH_WINDOW = (11 * 60 + 30, 13 * 60 + 30)
 # 晚饭要在这段时间营业：只做午市、下午四点半就打烊的自助餐不能排成晚饭。
@@ -650,9 +652,14 @@ def build_itinerary(
                                       description="附近没有能顺路安排的景点，下午留给休息或在周边随意逛逛。"))
 
         # 选中的晚餐用完了就从其余餐饮候选里就近补，不再让同一家餐厅连吃几晚。
+        # 选中的那家离当天最后一站太远时，附近有备选就换成备选：玩完再跑一个多小时去吃饭不合理。
         dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs) or _pick_dinner(
             backup_dinners, used_dinners, previous, costs
         )
+        if dinner_id is not None and previous is not None and costs.cost(previous, dinner_id) > MAX_DINNER_MINUTES:
+            nearby = _pick_dinner(backup_dinners, used_dinners, previous, costs)
+            if nearby is not None and costs.cost(previous, nearby) <= MAX_DINNER_MINUTES:
+                dinner_id = nearby
         if dinner_id is not None:
             eat_at(dinner_id)
             slots.append(_slot("evening", options[dinner_id], costs.minutes(previous, dinner_id)))
@@ -776,6 +783,13 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
             names = "、".join(slot.title for slot in visited)
             violations.append(Violation(code="daily_travel",
                                         message=f"第{day.day}天的{names}相距太远，路上估计要 {estimated} 分钟以上。"))
+    for day in itinerary:
+        for slot in day.slots:
+            if slot.period == "evening" and (slot.travel_minutes or 0) > MAX_DINNER_MINUTES:
+                violations.append(Violation(
+                    code="dinner_far",
+                    message=f"第{day.day}天晚饭{slot.title}离上一站约 {slot.travel_minutes} 分钟，太远了。",
+                ))
     titles = [slot.title for day in itinerary for slot in day.slots]
     for term in requirement.must_visit:
         if any(named_by(title, [term]) for title in titles):
