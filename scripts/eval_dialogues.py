@@ -191,6 +191,13 @@ def scenarios() -> list[Scenario]:
             must_not_contain=["没有任何具体价格"],
         ),
         Scenario(
+            name="budget_enough_question",
+            # 问预算够不够是提问，不该弹规划表单
+            turns=["去杭州玩两天预算两千够吗"],
+            expect_route="token",
+            must_contain=["元"],
+        ),
+        Scenario(
             name="recommend_destination",
             turns=["国庆不知道去哪玩，推荐几个城市"],
             expect_route="token",
