@@ -657,3 +657,14 @@ def test_avoided_dishes_are_not_wanted():
 
     assert wanted_dishes(requirement(styles=["火锅", "夜景"])) == ["火锅"]
     assert wanted_dishes(requirement(food_preferences=["不吃火锅"])) == []
+
+
+def test_a_hotel_found_by_web_search_shows_no_raw_snippet():
+    from app.agents.itinerary_planner import _hotel_note
+
+    scraped = option("西安钟楼饭店", "hotel", description="2022年入住，前台……钟楼附近 4.6分 1234条评论")
+    scraped = scraped.model_copy(update={"description": "2022年入住，前台……钟楼附近 4.6分 1234条评论"})
+    listed = option("城市名人酒店", "hotel", cost=353).model_copy(update={"description": "住宿，特色：桑拿，参考价 353 元/晚。"})
+
+    assert _hotel_note(scraped) == "价格和房态请在订房平台确认。"
+    assert _hotel_note(listed) == "住宿，特色：桑拿，参考价 353 元/晚。"

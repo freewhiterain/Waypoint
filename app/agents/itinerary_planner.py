@@ -130,6 +130,13 @@ _FAMOUS_OUTSKIRTS = ("兵马俑", "秦始皇帝陵", "长城", "千岛湖", "青
 _HOTEL_SUMMARY_CHARS = 60
 
 
+def _hotel_note(hotel: CandidateOption) -> str:
+    """地点库的酒店有结构化的价格和特色；联网搜到的多半只有一段攻略或评论残句，不如不放。"""
+    if hotel.estimated_cost is None:
+        return "价格和房态请在订房平台确认。"
+    return _hotel_summary(hotel.description)
+
+
 def _hotel_summary(description: str) -> str:
     first = description.split("。")[0].strip()
     return (first[:_HOTEL_SUMMARY_CHARS] + "…") if len(first) > _HOTEL_SUMMARY_CHARS else (first + "。" if first else "")
@@ -1288,7 +1295,7 @@ async def plan_itinerary(
         feedback = [item for item in feedback if item.code != "budget"] + _budget_violations(requirement, itinerary, hotel)
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
     if hotel is not None and itinerary:
-        itinerary[0].notes.insert(0, f"{HOTEL_NOTE_PREFIX}{hotel.name}。{_hotel_summary(hotel.description)}")
+        itinerary[0].notes.insert(0, f"{HOTEL_NOTE_PREFIX}{hotel.name}。{_hotel_note(hotel)}")
     for day, text in _trip_weather(requirement, results).items():
         if day <= len(itinerary):
             itinerary[day - 1].notes.insert(0, f"{WEATHER_NOTE_PREFIX}{text}")

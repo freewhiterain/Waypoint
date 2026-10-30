@@ -208,7 +208,8 @@ async def test_rule_planning_groups_nearby_places_and_notes_the_hotel():
     day_two = [slot.title for slot in itinerary[1].slots]
     assert set(day_one[:2]) == {"武侯祠", "人民公园"} and day_one[2] == "城里的餐厅"
     assert set(day_two[:2]) == {"都江堰", "青城山"} and day_two[2] == "都江堰的餐厅"
-    assert itinerary[0].notes[0] == "住宿：市中心酒店。市中心酒店的介绍。"
+    # 没有价格的酒店不贴原始介绍，提示去订房平台确认
+    assert itinerary[0].notes[0] == "住宿：市中心酒店。价格和房态请在订房平台确认。"
 
 
 def test_checker_flags_a_day_whose_stops_are_far_apart_by_coordinates():
