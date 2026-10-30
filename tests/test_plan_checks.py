@@ -108,3 +108,10 @@ def test_numbers_about_a_nearby_place_in_parentheses_are_not_compared():
     )
 
     assert check_plan(requirement, [day(1, aside, slot("evening", "某饭馆"))], Catalog()) == []
+
+
+def test_a_theme_park_sharing_its_day_is_flagged():
+    requirement = TravelRequirement(destination="上海", departure_date=START, days=1)
+    plan = [day(1, slot("morning", "上海迪士尼度假区"), slot("afternoon", "上海野生动物园"), slot("evening", "饭馆"))]
+
+    assert any("一整天" in issue.message for issue in check_plan(requirement, plan, Catalog()))

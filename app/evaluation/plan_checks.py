@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
-from app.agents.itinerary_planner import SIGHT_PERIOD_WINDOWS, same_place
+from app.agents.itinerary_planner import SIGHT_PERIOD_WINDOWS, is_full_day_name, same_place
 from app.agents.trip_cost import estimate_trip_cost
 from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement
@@ -117,6 +117,8 @@ def check_plan(
         if not any(slot.period == "evening" for slot in day.slots):
             logic(f"第{day.day}天没有晚饭")
         sights = [slot for slot in places if slot.period in _SIGHT_PERIODS]
+        if len(sights) > 1 and any(is_full_day_name(slot.title) for slot in sights):
+            logic(f"第{day.day}天的{'、'.join(slot.title for slot in sights)}里有要玩一整天的乐园，不该再排别的")
         if day.day in requirement.relaxed_days and len(sights) > 1:
             logic(f"第{day.day}天要求轻松，却排了 {len(sights)} 个景点")
 

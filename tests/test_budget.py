@@ -122,3 +122,37 @@ def test_food_shortlist_includes_a_restaurant_near_outlying_sights():
     assert any(straight_line_km((disney.latitude, disney.longitude), (r.latitude, r.longitude)) <= 5
                for r in food if r.latitude is not None)
     assert all(record.price is None or record.price <= 2000 * 0.3 / 3 for record in food)
+
+
+@pytest.mark.asyncio
+async def test_expensive_tickets_are_swapped_when_cheaper_meals_are_not_enough():
+    results = chengdu_results(LEGS)
+    sights = next(item for item in results if item.worker == "attractions")
+    prices = {"武侯祠": 300, "锦里": 0, "宽窄巷子": 0, "熊猫基地": 55}
+    sights.options[:] = [item.model_copy(update={"estimated_cost": prices[item.name]}) for item in sights.options]
+    requirement = TravelRequirement(destination="成都", departure_date=date(2026, 11, 14), days=1, budget=100)
+    pricey = PlaceSelection(hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+                            dinners=[SelectedPlace(id="小吃")])
+
+    itinerary, warnings = await plan_itinerary(requirement, results, llm=FakeLLM([pricey] * 3))
+
+    titles = [slot.title for slot in itinerary[0].slots]
+    assert "武侯祠" not in titles and "宽窄巷子" in titles
+    assert not any(w.startswith("itinerary_constraint:budget") for w in warnings)
+
+
+@pytest.mark.asyncio
+async def test_a_place_the_user_named_is_never_swapped_out_for_budget():
+    results = chengdu_results(LEGS)
+    sights = next(item for item in results if item.worker == "attractions")
+    sights.options[:] = [item.model_copy(update={"estimated_cost": 300 if item.name == "武侯祠" else 0})
+                         for item in sights.options]
+    requirement = TravelRequirement(destination="成都", departure_date=date(2026, 11, 14), days=1, budget=100,
+                                    must_visit=["武侯祠"])
+    pricey = PlaceSelection(hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+                            dinners=[SelectedPlace(id="小吃")])
+
+    itinerary, warnings = await plan_itinerary(requirement, results, llm=FakeLLM([pricey] * 3))
+
+    assert "武侯祠" in [slot.title for slot in itinerary[0].slots]
+    assert any(w.startswith("itinerary_constraint:budget") for w in warnings)

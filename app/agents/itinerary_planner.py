@@ -103,6 +103,20 @@ _NIGHT_WORDS = ("夜景", "夜游", "灯光秀", "不夜城", "夜市")
 _NIGHT_INTEREST_WORDS = ("夜景", "夜游", "夜市", "夜生活", "灯光")
 
 
+# 主题乐园、大型动物园一玩就是一整天：当天不再排别的景点。地点库的建议游玩时长封顶 4 小时
+# （迪士尼也只写 3.5），靠不住，按名字认。
+_FULL_DAY_WORDS = ("迪士尼", "环球影城", "环球度假区", "欢乐谷", "长隆", "方特", "海洋公园", "野生动物园", "野生动物世界", "海昌")
+FULL_DAY_NOTE = "这里一玩就是一整天，当天不再安排别的景点。"
+
+
+def is_full_day_name(name: str) -> bool:
+    return any(word in name for word in _FULL_DAY_WORDS)
+
+
+def is_full_day(option: CandidateOption) -> bool:
+    return is_full_day_name(option.name)
+
+
 def is_night_spot(option: CandidateOption) -> bool:
     """名字里带"夜景/夜游/灯光秀"的地点只适合晚上去，不能排进上午和下午。"""
     return any(word in option.name for word in _NIGHT_WORDS)
@@ -272,6 +286,8 @@ async def select_places_with_llm(
                 "候选里的 position 是 [纬度, 经度]，可以用来判断远近：晚餐选在所选景点附近的，"
                 "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个；"
                 "同一处地方的不同叫法（如灵隐寺和灵隐飞来峰景区）只选一个。"
+                "迪士尼、环球影城、欢乐谷、长隆这类主题乐园和大型动物园一玩就是一整天，"
+                "选了它当天就不会再排别的景点，景点总数要相应少选。"
                 "需求里 must_visit 是用户点名要去的地点，候选里有就必须选上。"
                 "需求里 budget 是整趟所有人的总预算（元）：门票和餐饮的 estimated_cost 按人头算、"
                 "酒店的 estimated_cost 是每晚房费，有预算时优先选便宜的和免费景点，总价不要超。"
@@ -579,12 +595,25 @@ def build_itinerary(
     options = {option.id: option for worker in ("attractions", "food") for option in _options(results, worker)}
     preferred = {item.id: item.preferred_day for item in selection.attractions if item.preferred_day}
     capacities = day_capacities(requirement)
-    day_plans = assign_days(
-        [item.id for item in selection.attractions], preferred, requirement.days, selection.hotel_id, costs, capacities
-    )
+    # 全天的景点各占一天：先定好是哪天、那天容量设为 1，再交给分天算法（排在最前面先放）。
+    full_day: list[str] = []
+    for item in selection.attractions:
+        if not is_full_day(options[item.id]) or len(full_day) >= requirement.days:
+            continue
+        taken = {preferred[place_id] for place_id in full_day}
+        day = item.preferred_day if item.preferred_day and item.preferred_day not in taken else next(
+            day for day in range(1, requirement.days + 1) if day not in taken
+        )
+        preferred[item.id] = day
+        capacities[day - 1] = 1
+        full_day.append(item.id)
+    attraction_ids = full_day + [
+        item.id for item in selection.attractions if item.id not in full_day and not is_full_day(options[item.id])
+    ]
+    day_plans = assign_days(attraction_ids, preferred, requirement.days, selection.hotel_id, costs, capacities)
     day_plans = top_up_days(
         day_plans,
-        [option.id for option in _candidates(results, "attractions", requirement)],
+        [option.id for option in _candidates(results, "attractions", requirement) if not is_full_day(option)],
         selection.hotel_id,
         costs,
         capacities,
@@ -627,8 +656,15 @@ def build_itinerary(
         slots: list[TimeSlot] = []
         previous = selection.hotel_id
         periods = _assign_periods([options[place_id] for place_id in place_ids])
+        whole_day = len(place_ids) == 1 and is_full_day(options[place_ids[0]])
         for period in ("morning", "afternoon"):
             option = periods.get(period)
+            if whole_day:
+                if option is not None:
+                    slot = _slot(period, option, costs.minutes(previous, option.id))
+                    slots.append(slot.model_copy(update={"description": f"{FULL_DAY_NOTE}{slot.description}"}))
+                    previous = option.id
+                continue
             if period == "afternoon" and previous is not None and periods.get("morning") is not None:
                 lunch_id = _pick_nearby(lunch_pool, used_dinners, previous, costs, MAX_LUNCH_MINUTES)
                 if lunch_id is not None:
@@ -800,41 +836,62 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
     return violations
 
 
-def trim_meals_to_budget(
+def trim_to_budget(
     requirement: TravelRequirement,
     results: list[WorkerResult],
     itinerary: list[ItineraryDay],
     hotel: CandidateOption | None,
     costs: TravelCosts,
 ) -> list[ItineraryDay]:
-    """从最贵的一顿开始，换成离上一站不远、饭点营业、还没吃过的更便宜餐厅，直到不超预算。"""
+    """模型压不进预算时的兜底：先换饭，再换门票，从最贵的开始，直到不超预算。
+
+    饭换成离上一站 45 分钟内、饭点营业、没吃过（含同连锁）的更便宜餐厅；
+    景点换成离上一站不远、该时段开放、没去过的更便宜景点。用户点名要去的不换。
+    """
     hotel_cost = hotel.estimated_cost if hotel else None
     by_name = {option.name: option for worker in ("attractions", "food") for option in _options(results, worker)}
-    food = [option for option in _candidates(results, "food", requirement) if option.estimated_cost is not None]
     days = [day.model_copy(deep=True) for day in itinerary]
-    meals = sorted(
-        ((day_index, slot_index) for day_index, day in enumerate(days) for slot_index, slot in enumerate(day.slots)
-         if slot.period in ("lunch", "evening") and slot.estimated_cost is not None),
-        key=lambda pos: -(days[pos[0]].slots[pos[1]].estimated_cost or 0),
-    )
-    for day_index, slot_index in meals:
-        if estimate_trip_cost(requirement, days, hotel_cost).total <= (requirement.budget or 0):
-            break
-        slot = days[day_index].slots[slot_index]
-        previous_title = days[day_index].slots[slot_index - 1].title if slot_index else None
-        previous = by_name[previous_title].id if previous_title in by_name else (hotel.id if hotel else None)
-        eaten = {_base_name(other.title) for day in days for other in day.slots if other.period in ("lunch", "evening")}
-        window = _LUNCH_WINDOW if slot.period == "lunch" else _DINNER_WINDOW
-        cheaper = [
-            option for option in food
-            if option.estimated_cost < (slot.estimated_cost or 0)
-            and _base_name(option.name) not in eaten
-            and _open_during(option, window)
-            and (previous is None or costs.cost(previous, option.id) <= MAX_DINNER_MINUTES)
+
+    def within_budget() -> bool:
+        return estimate_trip_cost(requirement, days, hotel_cost).total <= (requirement.budget or 0)
+
+    def previous_of(day_index: int, slot_index: int) -> str | None:
+        title = days[day_index].slots[slot_index - 1].title if slot_index else None
+        return by_name[title].id if title in by_name else (hotel.id if hotel else None)
+
+    def positions(periods: tuple[str, ...]) -> list[tuple[int, int]]:
+        found = [
+            (day_index, slot_index)
+            for day_index, day in enumerate(days)
+            for slot_index, slot in enumerate(day.slots)
+            if slot.period in periods and slot.estimated_cost and not named_by(slot.title, requirement.must_visit)
         ]
-        if cheaper:
-            best = min(cheaper, key=lambda option: (option.estimated_cost, costs.cost(previous, option.id)))
-            days[day_index].slots[slot_index] = _slot(slot.period, best, costs.minutes(previous, best.id))
+        return sorted(found, key=lambda pos: -(days[pos[0]].slots[pos[1]].estimated_cost or 0))
+
+    def swap(periods: tuple[str, ...], worker: str, fits, max_minutes: int) -> None:
+        pool = [option for option in _candidates(results, worker, requirement) if option.estimated_cost is not None]
+        for day_index, slot_index in positions(periods):
+            if within_budget():
+                return
+            slot = days[day_index].slots[slot_index]
+            previous = previous_of(day_index, slot_index)
+            used = [other.title for day in days for other in day.slots if other.period in periods]
+            cheaper = [
+                option for option in pool
+                if option.estimated_cost < (slot.estimated_cost or 0)
+                and not any(same_place(option.name, title, requirement.destination) for title in used)
+                and fits(option, slot.period)
+                and (previous is None or costs.cost(previous, option.id) <= max_minutes)
+            ]
+            if cheaper:
+                best = min(cheaper, key=lambda option: (option.estimated_cost, costs.cost(previous, option.id)))
+                days[day_index].slots[slot_index] = _slot(slot.period, best, costs.minutes(previous, best.id))
+
+    def meal_fits(option: CandidateOption, period: str) -> bool:
+        return _open_during(option, _LUNCH_WINDOW if period == "lunch" else _DINNER_WINDOW)
+
+    swap(("lunch", "evening"), "food", meal_fits, MAX_DINNER_MINUTES)
+    swap(("morning", "afternoon"), "attractions", lambda option, period: _fits(option, period), MAX_HOP_MINUTES)
     return days
 
 
@@ -898,8 +955,8 @@ async def plan_itinerary(
         if not feedback or by_rules:
             break
     if any(item.code == "budget" for item in feedback):
-        # 模型几轮都压不进预算时，由算法把最贵的几顿饭换成附近更便宜、当时营业的餐厅。
-        itinerary = trim_meals_to_budget(requirement, results, itinerary, hotel, costs)
+        # 模型几轮都压不进预算时，由算法把最贵的饭和门票换成附近更便宜的。
+        itinerary = trim_to_budget(requirement, results, itinerary, hotel, costs)
         feedback = [item for item in feedback if item.code != "budget"] + _budget_violations(requirement, itinerary, hotel)
     warnings.extend(f"itinerary_constraint:{item.code}:{item.message}" for item in feedback)
     if hotel is not None and itinerary:

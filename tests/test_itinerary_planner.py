@@ -463,3 +463,24 @@ def test_a_far_dinner_with_no_nearby_backup_is_a_violation():
     violations = check_itinerary(requirement(days=1), chengdu_results(LEGS), [day])
 
     assert [item.code for item in violations] == ["dinner_far"]
+
+
+@pytest.mark.asyncio
+async def test_a_theme_park_takes_the_whole_day():
+    results = chengdu_results(LEGS + [leg("武侯酒店", "成都欢乐谷", 30), leg("成都欢乐谷", "火锅", 20)])
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options.append(option("成都欢乐谷", "attractions"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="成都欢乐谷"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    park_day = next(day for day in itinerary if any(slot.title == "成都欢乐谷" for slot in day.slots))
+    sights = [slot for slot in park_day.slots if slot.period in ("morning", "afternoon")]
+    assert [slot.title for slot in sights] == ["成都欢乐谷"]
+    assert "一整天" in sights[0].description
+    other = next(day for day in itinerary if day is not park_day)
+    assert {"武侯祠", "锦里"} <= {slot.title for slot in other.slots}
