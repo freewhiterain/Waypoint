@@ -940,7 +940,61 @@ def build_itinerary(
                 notes=notes,
             )
         )
-    return itinerary
+    return ensure_wanted_food(requirement, results, itinerary, costs)
+
+
+def wanted_dishes(requirement: TravelRequirement) -> list[str]:
+    """用户点名想吃的东西（火锅、烤鸭、早茶……），忌口的说法不算。"""
+    said = [item for item in [*requirement.styles, *requirement.food_preferences]
+            if not item.startswith(("不", "忌", "别", "少"))]
+    return [word for word in _FOOD_STYLE_WORDS[1:] if any(word in item for item in said)]
+
+
+def _serves(option: CandidateOption, dish: str) -> bool:
+    text = f"{option.name}{option.attributes.get('type') or ''}{option.attributes.get('recommended_food') or ''}"
+    return dish in text
+
+
+def ensure_wanted_food(
+    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts
+) -> list[ItineraryDay]:
+    """说了"想吃火锅"，整趟却一顿火锅都没有时，把一顿晚饭换成附近能吃到的。
+
+    重庆情侣两天吃了两顿西餐、没有火锅，评审直接判"严重偏离"。换哪一顿：在 45 分钟内
+    找得到、晚饭时段营业、没吃过的，挑离上一站最近的那一顿。
+    """
+    dishes = wanted_dishes(requirement)
+    if not dishes:
+        return itinerary
+    by_name = {option.name: option for worker in ("attractions", "food", "hotel") for option in _options(results, worker)}
+    food = _candidates(results, "food", requirement)
+    days = [day.model_copy(deep=True) for day in itinerary]
+    for dish in dishes:
+        meals = [slot for day in days for slot in day.slots if slot.period in ("lunch", "evening")]
+        if any(slot.title in by_name and _serves(by_name[slot.title], dish) for slot in meals):
+            continue
+        eaten = {_base_name(slot.title) for slot in meals}
+        best: tuple[int, int, int, CandidateOption] | None = None
+        for day_index, day in enumerate(days):
+            for slot_index, slot in enumerate(day.slots):
+                if slot.period != "evening":
+                    continue
+                previous_title = day.slots[slot_index - 1].title if slot_index else None
+                previous = by_name[previous_title].id if previous_title in by_name else None
+                for option in food:
+                    if not _serves(option, dish) or _base_name(option.name) in eaten:
+                        continue
+                    if not _open_during(option, _DINNER_WINDOW):
+                        continue
+                    minutes = costs.cost(previous, option.id) if previous else 0
+                    if minutes <= MAX_DINNER_MINUTES and (best is None or minutes < best[2]):
+                        best = (day_index, slot_index, minutes, option)
+        if best is not None:
+            day_index, slot_index, _, option = best
+            previous_title = days[day_index].slots[slot_index - 1].title if slot_index else None
+            previous = by_name[previous_title].id if previous_title in by_name else None
+            days[day_index].slots[slot_index] = _slot("evening", option, costs.known(previous, option.id))
+    return days
 
 
 def _fits(option: CandidateOption, period: str) -> bool:

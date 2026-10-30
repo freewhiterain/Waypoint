@@ -633,3 +633,27 @@ async def test_a_city_sight_is_not_squeezed_into_an_excursion_day_even_when_the_
     excursion = next(day for day in itinerary if any(slot.title == "都江堰" for slot in day.slots))
     assert [slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")] == ["都江堰"]
     assert excursion.day == 2  # 避开第一天
+
+
+@pytest.mark.asyncio
+async def test_a_dish_the_user_asked_for_appears_at_least_once():
+    results = chengdu_results(LEGS + [leg("锦里", "西餐厅", 5), leg("锦里", "火锅", 12)])
+    food = next(item for item in results if item.worker == "food")
+    food.options[0] = option("火锅", "food", opening_hours="17:00-23:00")  # 只做晚市，午饭排不上
+    food.options.insert(0, option("西餐厅", "food", type="西餐"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店", attractions=[SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="西餐厅")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=1, food_preferences=["火锅"]), results, llm=llm)
+
+    meals = [slot.title for slot in itinerary[0].slots if slot.period in ("lunch", "evening")]
+    assert "火锅" in meals
+
+
+def test_avoided_dishes_are_not_wanted():
+    from app.agents.itinerary_planner import wanted_dishes
+
+    assert wanted_dishes(requirement(styles=["火锅", "夜景"])) == ["火锅"]
+    assert wanted_dishes(requirement(food_preferences=["不吃火锅"])) == []
