@@ -191,7 +191,8 @@ def _relaxed_hint(requirement: TravelRequirement) -> str:
 
 
 # 用户说"别太累""带老人""慢节奏"但没指定哪天时，模型会把它记成风格标签而不是 relaxed_days。
-_RELAXED_STYLE_WORDS = ("轻松", "悠闲", "休闲", "慢", "不累", "别太累", "老人", "腿脚")
+# 模型常把"爸妈年纪大了，别太赶"概括成"带父母"，所以同行长辈本身也算要轻松。
+_RELAXED_STYLE_WORDS = ("轻松", "悠闲", "休闲", "慢", "不累", "别太累", "赶", "老人", "腿脚", "年纪大", "长辈", "父母", "爸妈")
 
 
 def _wants_relaxed_trip(requirement: TravelRequirement) -> bool:

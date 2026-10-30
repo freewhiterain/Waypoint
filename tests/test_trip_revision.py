@@ -87,3 +87,11 @@ def test_full_place_name_completed_from_context_still_counts_as_mentioned():
 
     assert slots.avoid_places == ["成都大熊猫繁育研究基地"]
     assert "avoid_places" in dropped
+
+
+def test_travelling_with_older_parents_means_a_relaxed_pace_even_when_summarised():
+    for styles in (["带父母"], ["爸妈年纪大了，别太赶"], ["长辈同行"]):
+        requirement = TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=3, styles=styles)
+        assert day_capacities(requirement) == [1, 1, 1], styles
+    assert day_capacities(TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=2,
+                                            styles=["历史"])) == [2, 2]

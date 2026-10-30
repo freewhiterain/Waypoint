@@ -66,7 +66,8 @@ async def save_assistant_message(conversation_id: str, content: str, extra_info:
 _NOTES_PROMPT = (
     "用户在行程表单的“补充要求”里写了一段话。提取其中的游玩兴趣（styles）、口味或忌口（food_preferences）、"
     "点名要去的具体地点（must_visit）、不想去的地点（avoid_places）、要轻松些的第几天（relaxed_days）、"
-    "人数（adults/children）、出发城市（origin）和总预算（budget，元，人均要乘以人数）。目的地、日期、天数以表单为准，不要填。没提到的留空。"
+    "人数（adults/children）、出发城市（origin）和总预算（budget，元，人均要乘以人数）。"
+    "节奏要求（别太赶、轻松一点）和同行人的情况（老人、小孩）按原话记进 styles，不要概括。目的地、日期、天数以表单为准，不要填。没提到的留空。"
 )
 # 目的地、日期、天数以表单为准：补充要求里即使提到也不改。
 _FORM_OWNED = {"destination": None, "departure_date": None, "days": None}
