@@ -78,6 +78,9 @@ export interface TravelRequirement {
   children: number;
   styles: string[];
   food_preferences: string[];
+  must_visit?: string[];
+  /** 整趟所有人的总预算（元），不含往返交通 */
+  budget?: number | null;
 }
 
 export interface TravelPlanDraft {

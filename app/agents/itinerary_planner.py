@@ -24,6 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agents.trip_cost import estimate_trip_cost
 from app.core.llm import describe_llm_failure
 from app.places.catalog import named_by, straight_line_km
 from app.schemas.planning import (
@@ -270,6 +271,8 @@ async def select_places_with_llm(
                 "离其他景点都很远的景点（比如在几十公里外的郊县）一次行程最多选一个；"
                 "同一处地方的不同叫法（如灵隐寺和灵隐飞来峰景区）只选一个。"
                 "需求里 must_visit 是用户点名要去的地点，候选里有就必须选上。"
+                "需求里 budget 是整趟所有人的总预算（元）：门票和餐饮的 estimated_cost 按人头算、"
+                "酒店的 estimated_cost 是每晚房费，有预算时优先选便宜的和免费景点，总价不要超。"
             ),
         },
         {
@@ -783,6 +786,17 @@ def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult],
     return violations
 
 
+def _budget_violations(
+    requirement: TravelRequirement, itinerary: list[ItineraryDay], hotel: CandidateOption | None
+) -> list[Violation]:
+    if not requirement.budget:
+        return []
+    total = estimate_trip_cost(requirement, itinerary, hotel.estimated_cost if hotel else None).total
+    if total <= requirement.budget:
+        return []
+    return [Violation(code="budget", message=f"按地点库价格估算约 {total:.0f} 元，超出预算 {requirement.budget:.0f} 元。")]
+
+
 # ---------------------------------------------------------------- 编排入口
 
 
@@ -827,7 +841,7 @@ async def plan_itinerary(
             itinerary = build_itinerary(requirement, results, selection, costs)
             hotel = next((option for option in _options(results, "hotel") if option.id == selection.hotel_id), None)
         warnings.extend(round_warnings)
-        feedback = check_itinerary(requirement, results, itinerary)
+        feedback = check_itinerary(requirement, results, itinerary) + _budget_violations(requirement, itinerary, hotel)
         # 规则选点不会根据违规原因调整，重选也是同一个结果，只有 LLM 选点才值得再来一轮。
         if not feedback or by_rules:
             break

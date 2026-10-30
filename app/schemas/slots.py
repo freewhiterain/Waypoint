@@ -31,6 +31,7 @@ class TripSlots(BaseModel):
     suggested_destinations: list[str] = Field(default_factory=list)
     # 点名要去的地点，以及看过行程后提的修改：不想去的地点、希望轻松些的第几天。换目的地时清空。
     must_visit: list[str] = Field(default_factory=list)
+    budget: float | None = None
     avoid_places: list[str] = Field(default_factory=list)
     relaxed_days: list[int] = Field(default_factory=list)
 
@@ -50,7 +51,7 @@ class TripSlots(BaseModel):
             mode="json",
             include={
                 "origin", "adults", "children", "styles", "food_preferences",
-                "must_visit", "avoid_places", "relaxed_days",
+                "must_visit", "budget", "avoid_places", "relaxed_days",
             },
             exclude_none=True,
         )
@@ -68,6 +69,10 @@ class SlotUpdate(BaseModel):
     children: int | None = Field(default=None, description="儿童人数")
     styles: list[str] = Field(default_factory=list, description="游玩兴趣或风格，如 美食、熊猫、亲子")
     food_preferences: list[str] = Field(default_factory=list, description="口味或饮食要求，如 不吃辣、素食")
+    budget: float | None = Field(
+        default=None,
+        description="整趟旅行所有人加起来的总预算（元），不含往返交通；用户说人均或每人时乘以人数；没提预算留空",
+    )
     must_visit: list[str] = Field(
         default_factory=list, description="用户这一轮点名一定要去、想去的具体景点或餐厅，照抄用户说的名字；泛泛的兴趣（美食、博物馆）不算"
     )

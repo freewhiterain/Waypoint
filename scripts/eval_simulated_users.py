@@ -53,6 +53,7 @@ class SimulatedUser:
     departure_date: date
     must_visit: list[str] = field(default_factory=list)
     food_avoid: list[str] = field(default_factory=list)
+    budget: float | None = None
     # 看完第一版行程后想改的地方（自然语言），以及改完后行程里不能再出现的地点、要轻松的天
     after_plan: str = ""
     avoid: list[str] = field(default_factory=list)
@@ -113,6 +114,12 @@ def users() -> list[SimulatedUser]:
             destination="成都", days=2, departure_date=soon,
             after_plan="看完行程后不想去熊猫基地，并且希望第二天轻松一点",
             avoid=["熊猫"], relaxed_days=[2],
+        ),
+        SimulatedUser(
+            name="shanghai_student_budget",
+            goal=f"{soon.isoformat()} 一个人去上海玩 3 天，是学生，总预算 1500 元（不算往返车票）。",
+            persona="说话随意，先说去上海玩几天，被问到或表单里再说预算。",
+            destination="上海", days=3, departure_date=soon, budget=1500,
         ),
         SimulatedUser(
             name="hangzhou_date_later",
@@ -200,6 +207,8 @@ def _understanding_issues(user: SimulatedUser, requirement: dict[str, Any]) -> l
     for word in user.food_avoid:
         if word not in food:
             issues.append(f"没记下忌口「{word}」")
+    if user.budget and requirement.get("budget") != user.budget:
+        issues.append(f"预算记成 {requirement.get('budget')!r}，用户说的是 {user.budget:g}")
     return issues
 
 

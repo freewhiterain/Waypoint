@@ -188,11 +188,14 @@ class PlaceCatalog:
         if not records:
             return []
         if category == "hotel":
-            return records[:HOTEL_SHORTLIST]
+            return _affordable_hotels(records, requirement)[:HOTEL_SHORTLIST]
         limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
         night_extra: list[PlaceRecord] = []
         if category == "food":
             price_cap = None if _wants_upscale(requirement) else _price_cap(records)
+            budget_cap = _budget_share(requirement, _MEAL_SHARE) / requirement.days if requirement.budget else None
+            if budget_cap is not None:
+                price_cap = budget_cap if price_cap is None else min(price_cap, budget_cap)
             records = [
                 record
                 for record in records
@@ -251,6 +254,30 @@ def _mostly_spicy(recommended_food: str) -> bool:
     dishes = [dish for dish in recommended_food.split(",") if dish.strip()]
     spicy = [dish for dish in dishes if any(word in dish for word in (*_SPICY_NAME_WORDS, "冷吃", "辣"))]
     return len(spicy) >= 2 or (bool(dishes) and len(spicy) * 2 >= len(dishes))
+
+
+# 有预算时给住宿、餐饮各留的份额（剩下给门票和机动）。每晚房费、每人每天餐费不超过这份额。
+_HOTEL_SHARE, _MEAL_SHARE = 0.45, 0.3
+_MIN_AFFORDABLE_HOTELS = 3
+
+
+def _budget_share(requirement: TravelRequirement, share: float) -> float:
+    """预算里这一块给每人（餐饮）的钱；住宿另算。"""
+    people = max(1, requirement.adults + requirement.children)
+    return (requirement.budget or 0) * share / people
+
+
+def _affordable_hotels(records: list[PlaceRecord], requirement: TravelRequirement) -> list[PlaceRecord]:
+    """有预算时只给住得起的酒店（每晚不超过预算的住宿份额）；一个都没有就给最便宜的几家。"""
+    nights = requirement.days - 1
+    if not requirement.budget or nights <= 0:
+        return records
+    cap = requirement.budget * _HOTEL_SHARE / nights
+    affordable = [record for record in records if record.price is not None and record.price <= cap]
+    if len(affordable) >= _MIN_AFFORDABLE_HOTELS:
+        return affordable
+    priced = sorted((record for record in records if record.price is not None), key=lambda record: record.price)
+    return priced[:HOTEL_SHORTLIST]
 
 
 def _price_cap(records: list[PlaceRecord]) -> float | None:

@@ -42,6 +42,8 @@ class TravelRequirement(BaseModel):
     food_preferences: list[str] = Field(default_factory=list)
     # 用户点名要去的地点，以及看过上一版行程后提的修改，都是排程的硬约束。
     must_visit: list[str] = Field(default_factory=list)
+    # 整趟旅行所有人的总预算（元），含门票、餐饮和住宿，不含城际交通。
+    budget: float | None = Field(default=None, gt=0)
     avoid_places: list[str] = Field(default_factory=list)
     relaxed_days: list[int] = Field(default_factory=list)
 

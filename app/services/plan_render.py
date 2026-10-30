@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from app.agents.trip_cost import estimate_trip_cost, hotel_price
 from app.schemas.planning import TravelPlanDraft
 
 
@@ -52,6 +53,15 @@ def user_facing_warnings(warnings: list[str]) -> list[str]:
     return (known + notes[:_MAX_MODEL_NOTES])[:_MAX_USER_WARNINGS]
 
 
+def _budget_line(draft: TravelPlanDraft) -> str:
+    cost = estimate_trip_cost(draft.requirement, draft.itinerary, hotel_price(draft.itinerary, draft.worker_results))
+    budget = draft.requirement.budget or 0
+    verdict = "在预算内" if cost.total <= budget else f"超出 {cost.total - budget:.0f} 元"
+    parts = f"门票 {cost.tickets:.0f} · 餐饮 {cost.meals:.0f} · 住宿 {cost.hotel:.0f}"
+    missing = f"，另有 {cost.unknown} 处没有价格" if cost.unknown else ""
+    return f"**预算**：{budget:.0f} 元，预计约 {cost.total:.0f} 元（{parts}{missing}），{verdict}。不含往返交通。"
+
+
 def has_concrete_places(draft: TravelPlanDraft) -> bool:
     """行程里至少有一个具体地点；每个时段都是"自由活动/自由安排晚餐"时等于没排出来。"""
     return any(
@@ -93,6 +103,8 @@ def render_plan_markdown(draft: TravelPlanDraft) -> str:
     if draft.itinerary and not has_concrete_places(draft):
         return _render_unplannable(draft)
     lines = [f"# {draft.requirement.destination}{draft.requirement.days}日行程草稿", ""]
+    if draft.requirement.budget:
+        lines.extend([_budget_line(draft), ""])
     if draft.requirement.assumptions:
         lines.append("## 假设说明")
         lines.extend(f"- {assumption}" for assumption in draft.requirement.assumptions)

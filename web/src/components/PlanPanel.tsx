@@ -86,6 +86,8 @@ function Slot({ slot, first, onReplace }: { slot: TimeSlot; first: boolean; onRe
 function CostCard({ plan }: { plan: TravelPlanDraft }) {
   const cost = estimateCost(plan);
   if (!cost.total) return null;
+  const budget = plan.requirement.budget;
+  const over = budget ? cost.total - budget : 0;
   const rows = [
     { label: "门票", value: cost.tickets },
     { label: "餐饮", value: cost.meals },
@@ -99,6 +101,11 @@ function CostCard({ plan }: { plan: TravelPlanDraft }) {
         </p>
         <p className="font-display text-xl font-semibold">¥{Math.round(cost.total).toLocaleString()}</p>
       </div>
+      {budget ? (
+        <p className={clsx("mt-1 text-right text-xs", over > 0 ? "text-red-500" : "text-moss-600 dark:text-moss-400")}>
+          预算 ¥{Math.round(budget).toLocaleString()} · {over > 0 ? `超出 ¥${Math.round(over).toLocaleString()}` : "在预算内"}
+        </p>
+      ) : null}
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         {rows.map((row) => (
           <div key={row.label} className="rounded-xl bg-ink-50 px-2 py-2 dark:bg-ink-800">

@@ -40,7 +40,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.evaluation.plan_checks import check_plan  # noqa: E402
-from app.schemas.planning import ItineraryDay, TravelRequirement  # noqa: E402
+from app.agents.trip_cost import hotel_price  # noqa: E402
+from app.schemas.planning import ItineraryDay, TravelRequirement, WorkerResult  # noqa: E402
 
 LAYERS = ("delivery", "environment", "logic")
 
@@ -152,6 +153,13 @@ def scenarios() -> list[Scenario]:
             turns=[f"{soon}去重庆玩两天，一定要去李子坝轻轨站和渣滓洞，帮我规划"],
             expect_prefill={"destination": "重庆", "days": 2, "departure_date": soon},
             must_contain=["李子坝轻轨站", "渣滓洞"],
+        ),
+        Scenario(
+            name="shanghai_tight_budget",
+            # 上海酒店中位数 600+/晚：不按预算筛就会超。是否超预算由 plan_checks 按结构判定。
+            turns=[f"{soon}去上海玩三天，一个人，预算两千块以内，帮我规划"],
+            expect_prefill={"destination": "上海", "days": 3, "departure_date": soon},
+            must_contain=["**预算**", "在预算内"],
         ),
         Scenario(
             name="hangzhou_elderly_relaxed",
@@ -285,7 +293,8 @@ def _structured_issues(events: list[dict[str, Any]], issues: dict[str, list[str]
     if not any(not slot.title.startswith("自由") and "分区自由活动" not in slot.title
                for day in itinerary for slot in day.slots):
         issues["delivery"].append("行程里没有任何具体地点")
-    for issue in check_plan(requirement, itinerary):
+    hotel = hotel_price(itinerary, [WorkerResult(**item) for item in result.get("worker_results") or []])
+    for issue in check_plan(requirement, itinerary, hotel_price=hotel):
         issues[issue.category].append(issue.message)
     issues["logic"].extend(plan_quality_failures(output))
 

@@ -120,6 +120,7 @@ function tripFromCall(callId: string, args: Record<string, any> | undefined): Tr
   const context = args?.requirement_context || {};
   const revisions = [
     ...((context.must_visit as string[] | undefined) || []).map((place) => `必去 ${place}`),
+    ...(context.budget ? [`预算 ¥${Math.round(Number(context.budget)).toLocaleString()}`] : []),
     ...((context.avoid_places as string[] | undefined) || []).map((place) => `不去 ${place}`),
     ...((context.relaxed_days as number[] | undefined) || []).map((day) => `第 ${day} 天轻松些`),
   ];

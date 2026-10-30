@@ -18,6 +18,7 @@ from datetime import timedelta
 from typing import Literal
 
 from app.agents.itinerary_planner import SIGHT_PERIOD_WINDOWS, same_place
+from app.agents.trip_cost import estimate_trip_cost
 from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement
 
@@ -73,6 +74,7 @@ def check_plan(
     requirement: TravelRequirement,
     itinerary: list[ItineraryDay],
     catalog: PlaceCatalog | None = None,
+    hotel_price: float | None = None,
 ) -> list[PlanIssue]:
     catalog = catalog or get_place_catalog()
     city = requirement.destination
@@ -117,6 +119,11 @@ def check_plan(
     for term in requirement.must_visit:
         if not any(named_by(title, [term]) for title in titles):
             logic(f"用户点名要去「{term}」，行程里没有")
+
+    if requirement.budget:
+        total = estimate_trip_cost(requirement, itinerary, hotel_price).total
+        if total > requirement.budget:
+            logic(f"预计花费约 {total:.0f} 元，超出预算 {requirement.budget:.0f} 元")
 
     issues.extend(_description_issues(itinerary))
     if city in catalog.cities():

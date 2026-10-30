@@ -35,6 +35,8 @@ _RELATIVE_DATE = re.compile(r"今天|明天|后天|大后天|下?下?周[一二�
 _DAYS_CUE = re.compile(r"(\d+|[一二两三四五六七八九十半])\s*(?:天|日|晚|周|个?星期|个?礼拜|个月)|周末|\d+[\s-]*(?:days?|nights?|weeks?)", re.I)
 _PARTY_CUE = re.compile(r"人|位|口|大人|孩子|小孩|宝宝|娃|爸|妈|父母|老人|朋友|对象|老婆|老公|媳妇|情侣|夫妻|同事|同学|闺蜜|家人|一起|我们|俩|独自|自己")
 # "第二天轻松一点""少安排一个景点""别太累"：才允许记 relaxed_days。
+# 预算要有说预算的话："预算 3000""两千块以内""人均一千"。
+_BUDGET_CUE = re.compile(r"预算|块|元|以内|不超过|别超过|花费|左右|[0-9]\s*[kKwW千万]|[一二两三四五六七八九十][千万]")
 _RELAXED_CUE = re.compile(r"轻松|少安排|少去|少排|别太累|不要太累|太累|慢一点|慢点|悠闲|休息|空一点|松一点")
 # 用户用指代接受推荐："就第一个吧""去那里"。
 _SELECTION_CUE = re.compile(r"第[一二三四五]个|前者|后者|这个|那个|这里|那里|就它|就这|就那|听你的")
@@ -91,6 +93,7 @@ def apply_slot_update(
             if destination != slots.destination:
                 # 换了城市就是另一趟行程，上一版的修改意见不再适用。
                 values["must_visit"] = []
+                values["budget"] = None
                 values["avoid_places"] = []
                 values["relaxed_days"] = []
             values["destination"] = destination
@@ -150,6 +153,12 @@ def apply_slot_update(
         place for place in merged
         if not any(place in avoided or avoided in place for avoided in values["avoid_places"])
     ][:_MAX_LIST_ITEMS]
+
+    if update.budget is not None:
+        if 0 < update.budget <= 10_000_000 and _BUDGET_CUE.search(user_text):
+            values["budget"] = float(update.budget)
+        else:
+            dropped.append("budget")
 
     if update.relaxed_days:
         if _RELAXED_CUE.search(user_text):
