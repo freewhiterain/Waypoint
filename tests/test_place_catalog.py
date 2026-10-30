@@ -8,7 +8,7 @@ from app.agents.itinerary_planner import TravelCosts, check_itinerary, plan_itin
 from app.agents.subagents.attractions import AttractionsSubagent
 from app.agents.subagents.food import FoodSubagent
 from app.agents.travel_time import Place, StraightLineProvider, describe_leg
-from app.places.catalog import PlaceCatalog, get_place_catalog, straight_line_km
+from app.places.catalog import PlaceCatalog, PlaceRecord, get_place_catalog, straight_line_km
 from app.schemas.planning import (
     CandidateOption,
     ItineraryDay,
@@ -288,3 +288,11 @@ def test_night_spots_do_not_take_daytime_slots_and_are_added_only_for_night_love
 
     assert not any("夜景" in name for name in plain) and len(plain) == 9
     assert sum("夜景" in name for name in night) == 3 and len(night) == 12
+
+
+def test_zero_price_on_a_historic_site_means_unrecorded_not_free():
+    palace = PlaceRecord(city="北京", category="attractions", rank=1, name="故宫博物院", type="历史古迹", price=0)
+    park = PlaceRecord(city="北京", category="attractions", rank=2, name="景山公园", type="公园", price=0)
+
+    assert palace.known_price is None and "门票价格未收录" in palace.describe() and "免费" not in palace.describe()
+    assert park.known_price == 0 and "免费" in park.describe()

@@ -54,6 +54,9 @@ _STYLE_ALIASES = {
 }
 
 
+_UNRECORDED_ZERO_TYPES = {"历史古迹", "文化旅游区", "游乐园/体育娱乐", "园林"}
+
+
 class PlaceRecord(BaseModel):
     city: str
     category: PlaceCategory
@@ -80,14 +83,24 @@ class PlaceRecord(BaseModel):
             return "全天"
         return f"{self.open_time}-{self.close_time}"
 
+    @property
+    def known_price(self) -> float | None:
+        """可信的价格。古迹、文化旅游区、乐园、园林在源数据里写 0 的，多半是没收录而不是免费
+        （故宫、总统府、灵隐寺都写成 0），当作未知；公园、自然风光、博物馆写 0 多是真免费。"""
+        if self.category == "attractions" and self.price == 0 and self.type in _UNRECORDED_ZERO_TYPES:
+            return None
+        return self.price
+
     def describe(self) -> str:
         """一句话事实描述，同时作为这条候选的证据正文。"""
         if self.category == "attractions":
             parts = [self.type or "景点"]
             if self.opening_hours:
                 parts.append("全天开放" if self.opening_hours == "全天" else f"开放时间 {self.opening_hours}")
-            if self.price is not None:
-                parts.append("免费" if self.price == 0 else f"门票 {self.price:g} 元")
+            if self.known_price is not None:
+                parts.append("免费" if self.known_price == 0 else f"门票 {self.known_price:g} 元")
+            elif self.price == 0:
+                parts.append("门票价格未收录")
         elif self.category == "food":
             parts = [self.type or "餐厅"]
             if self.price is not None:

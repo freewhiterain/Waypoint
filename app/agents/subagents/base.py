@@ -262,7 +262,7 @@ class DomainSubagent:
                     name=record.name,
                     category=self.worker,
                     description=description,
-                    estimated_cost=record.price,
+                    estimated_cost=record.known_price,
                     attributes=record.attributes(),
                     evidence_ids=[evidence_id],
                 )

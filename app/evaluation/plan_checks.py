@@ -148,9 +148,10 @@ def _environment_issues(city: str, itinerary: list[ItineraryDay], catalog: Place
             if record is None:
                 issues.append(PlanIssue("environment", f"第{day.day}天「{slot.title}」不在{city}地点库里"))
                 continue
-            if record.price is not None and slot.estimated_cost is not None and abs(record.price - slot.estimated_cost) > 1:
+            price = record.known_price
+            if price is not None and slot.estimated_cost is not None and abs(price - slot.estimated_cost) > 1:
                 issues.append(PlanIssue(
-                    "environment", f"「{slot.title}」费用写 {slot.estimated_cost:g} 元，地点库是 {record.price:g} 元"
+                    "environment", f"「{slot.title}」费用写 {slot.estimated_cost:g} 元，地点库是 {price:g} 元"
                 ))
             if record.opening_hours and slot.opening_window and slot.opening_window != record.opening_hours:
                 issues.append(PlanIssue(
