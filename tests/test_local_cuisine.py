@@ -109,3 +109,11 @@ def test_at_most_one_foreign_dinner_on_a_short_trip_unless_asked_for():
 
     assert [day.slots[0].title for day in fixed] == ["德式西餐", "老火锅"]
     assert [day.slots[0].title for day in asked] == ["德式西餐", "意大利餐"]
+
+
+def test_more_sichuan_snacks_count_as_spicy():
+    snacks = PlaceRecord(city="成都", category="food", rank=1, name="某老店", type="小吃",
+                         recommended_food="甜水面,钟水饺,龙抄手,叶儿粑")
+    requirement = TravelRequirement(destination="成都", departure_date=DAY, days=1, food_preferences=["不吃辣"])
+
+    assert not _suits_dinner(snacks, requirement)

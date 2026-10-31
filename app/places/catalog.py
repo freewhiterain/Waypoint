@@ -327,7 +327,8 @@ def _matches(record: PlaceRecord, keywords: list[str]) -> bool:
 
 
 # 推荐菜里看得出是辣的："担担面""伤心凉粉""口水鸡""水煮鱼""毛血旺"名字里都没有"辣"字。
-_SPICY_DISH_WORDS = ("冷吃", "辣", "冬阴功", "担担", "凉粉", "红油", "水煮", "口水", "毛血旺", "剁椒", "麻婆")
+_SPICY_DISH_WORDS = ("冷吃", "辣", "冬阴功", "担担", "凉粉", "红油", "水煮", "口水", "毛血旺", "剁椒", "麻婆",
+                     "甜水面", "钟水饺", "肺片", "兔头", "钵钵")
 
 
 def _mostly_spicy(recommended_food: str) -> bool:
