@@ -320,7 +320,7 @@ def test_hotel_candidates_are_the_central_ones_among_popular_hotels(tmp_path):
     hotels += [f"上海,{i},远郊酒店{i},温泉,31.19,121.71,400,2" for i in range(8)]  # 约 23km
     hotels += [f"上海,{i + 8},市中心酒店{i},商务,31.235,121.475,450,2" for i in range(3)]
     (tmp_path / "attractions.csv").write_text("\n".join(sights) + "\n", encoding="utf-8")
-    (tmp_path / "hotels.csv").write_text("\n".join(hotels) + "\n", encoding="utf-8")
+    (tmp_path / "accommodations.csv").write_text("\n".join(hotels) + "\n", encoding="utf-8")
 
     names = [record.name for record in PlaceCatalog(tmp_path).shortlist(requirement(destination="上海"), "hotel")]
 
