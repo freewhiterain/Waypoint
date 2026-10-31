@@ -369,7 +369,12 @@ def build_itinerary(
         if is_night_spot(option) and not _avoided(option, requirement)
     }
     night_pool = list(night_options) if wants_night(requirement) else []
-    used_nights: set[str] = set()
+    # 白天已经去过的同一段体验（下午坐了两江游），晚上不再排它的夜游船
+    day_names = [options[place_id].name for plan in day_plans for place_id in plan]
+    used_nights: set[str] = {
+        night_id for night_id, night in night_options.items()
+        if any(same_place(night.name, name, requirement.destination) for name in day_names)
+    }
     # 午餐从没被选作晚餐的餐饮候选里就近挑，不交给 LLM：它只关心"离上午景点近、中午开门"。
     lunch_pool = (
         [

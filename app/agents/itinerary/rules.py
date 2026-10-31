@@ -266,6 +266,10 @@ def _core_name(name: str, city: str = "") -> str:
     return core
 
 
+# 名字不同、其实是同一段体验的：上海"黄浦江"和"外滩"是同一段江岸；重庆白天"两江游"和晚上"两江夜景游轮"是同一条船线。
+_SAME_EXPERIENCE = (("黄浦江", "外滩"), ("两江游", "两江夜", "夜游两江", "两江小渡"))
+
+
 def same_place(first: str, second: str, city: str = "") -> bool:
     """同一处地方的不同叫法：灵隐寺 / 灵隐飞来峰景区，故宫 / 故宫博物院。
 
@@ -274,6 +278,8 @@ def same_place(first: str, second: str, city: str = "") -> bool:
     if not first or not second:
         return False
     if first == second:
+        return True
+    if any(any(word in first for word in group) and any(word in second for word in group) for group in _SAME_EXPERIENCE):
         return True
     a, b = _core_name(first, city), _core_name(second, city)
     if len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first)):

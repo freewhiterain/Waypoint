@@ -318,6 +318,8 @@ async def test_the_same_restaurant_is_not_repeated_on_later_evenings():
         ("四季民福烤鸭店(故宫店)", "故宫博物院", False),
         ("南京大牌档(夫子庙平江府店)", "夫子庙", False),
         ("秦始皇帝陵博物院(兵马俑)", "兵马俑", True),  # 括号里是别名
+        ("黄浦江", "外滩", True),  # 名字不同、同一段江岸
+        ("重庆两江游", "朝天门号两江夜景游轮", True),
     ],
 )
 def test_same_place_recognises_different_names_for_one_spot(first, second, expected):
