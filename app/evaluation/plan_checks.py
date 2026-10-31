@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
-from app.agents.itinerary_planner import SIGHT_PERIOD_WINDOWS, is_full_day_name, same_place
+from app.agents.itinerary.rules import SIGHT_PERIOD_WINDOWS, is_full_day_name, same_place
 from app.agents.trip_cost import estimate_trip_cost
 from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement

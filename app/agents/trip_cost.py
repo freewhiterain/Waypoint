@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from app.schemas.planning import ItineraryDay, TravelRequirement, WorkerResult
 
 _MEAL_PERIODS = ("lunch", "evening")
-# 与 itinerary_planner.HOTEL_NOTE_PREFIX 相同；这里不反向依赖排程模块。
+# 与 itinerary.rules.HOTEL_NOTE_PREFIX 相同；这里不反向依赖排程模块。
 _HOTEL_PREFIX = "住宿："
 
 

@@ -18,7 +18,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field
 
 from app.agents.planner import create_research_plan, parallel_groups
-from app.agents.itinerary_planner import plan_itinerary
+from app.agents.itinerary.planner import plan_itinerary
 from app.agents.subagents.registry import create_default_subagent_registry
 from app.config import settings
 from app.governance.evidence import EvidenceGovernanceService, ReviewedResearch
