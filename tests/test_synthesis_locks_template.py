@@ -93,3 +93,29 @@ async def test_invalid_structured_output_is_retried_once(monkeypatch, requiremen
 
     assert Flaky.calls == 2
     assert [slot.description for slot in days[0].slots] == ["重试后的描述"] * 3
+
+
+@pytest.mark.asyncio
+async def test_each_day_is_written_separately_and_a_failed_day_keeps_its_template(monkeypatch):
+    first = _template()[0]
+    second = first.model_copy(update={"day": 2, "date": date(2026, 11, 15)})
+    requirement = TravelRequirement(destination="成都", departure_date=date(2026, 11, 14), days=2)
+
+    class PerDay:
+        def with_structured_output(self, schema):
+            return self
+
+        async def ainvoke(self, messages):
+            prompt = messages[-1]["content"]
+            if "第 2 天" in prompt:
+                raise ValueError("bad json")
+            return supervisor._LLMItinerary(days=[supervisor._DayText(day=1, slots=[
+                supervisor._SlotText(period=slot.period, description="第一天改写") for slot in first.slots])])
+
+    monkeypatch.setattr(supervisor.settings, "llm_api_key", "test-key")
+    monkeypatch.setattr("app.core.llm.get_llm", lambda temperature=None: PerDay())
+
+    days = await supervisor.synthesize_itinerary_with_llm(requirement, [], [first, second])
+
+    assert [slot.description for slot in days[0].slots] == ["第一天改写"] * 3
+    assert [slot.description for slot in days[1].slots] == ["模板描述"] * 3

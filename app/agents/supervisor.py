@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
@@ -209,44 +210,48 @@ async def synthesize_itinerary_with_llm(
             for result in results
         )
         structured = get_llm(temperature=0.3).with_structured_output(_LLMItinerary)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是行程编排专家，以 JSON 格式输出。只能使用给定研究结果中出现过的景点、餐厅和事实，"
-                    "不得虚构任何班次、价格、营业时间或天气结论；"
-                    "没有依据的信息直接不写，不要用“需实时确认”“以实际为准”这类话凑数，"
-                    "行程末尾已经有统一的提示。"
-                    "模板中每个时段的地点和先后顺序已按交通耗时排好，你只为每个时段写描述，"
-                    "按模板的天和时段顺序逐一返回，period 与模板一致，不要增删时段。"
-                    "travel_minutes 是交通耗时（有路线数据时是实测，没有时按两地直线距离估算）："
-                    "每天第一个时段是从住处出发，其余时段是从同一天前一个时段的地点过来，"
-                    "travel_mode=walk 写成“步行约 X 分钟”，drive 写成“约 X 分钟车程”；"
-                    "为空的不要自己估算，也不要提交通。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"需求：{requirement.model_dump_json()}\n"
-                    f"研究结果：\n{evidence_digest}\n"
-                    f"模板行程：{[day.model_dump_json() for day in template]}\n"
-                    "请用研究结果为模板里每个时段写描述。"
-                ),
-            },
-        ]
-        for attempt in range(_SYNTHESIS_ATTEMPTS):
-            try:
-                response = _LLMItinerary.model_validate(await structured.ainvoke(messages))
-                break
-            except Exception as exc:
-                if attempt + 1 == _SYNTHESIS_ATTEMPTS:
-                    raise
-                app_logger.warning(f"LLM 成文第 {attempt + 1} 次未返回有效结果，重试: {type(exc).__name__}")
-        if len(response.days) == len(template):
-            return [_merge_day(day, source) for day, source in zip(response.days, template)]
-        app_logger.warning("LLM 综合返回的天数与模板不一致，退回模板行程")
-        return template
+        system = (
+            "你是行程编排专家，以 JSON 格式输出。只能使用给定研究结果中出现过的景点、餐厅和事实，"
+            "不得虚构任何班次、价格、营业时间或天气结论；"
+            "没有依据的信息直接不写，不要用“需实时确认”“以实际为准”这类话凑数，"
+            "行程末尾已经有统一的提示。"
+            "模板中每个时段的地点和先后顺序已按交通耗时排好，你只为每个时段写描述，"
+            "按模板的时段顺序逐一返回，period 与模板一致，不要增删时段。"
+            "travel_minutes 是交通耗时（有路线数据时是实测，没有时按两地直线距离估算）："
+            "第一个时段是从住处出发，其余时段是从前一个时段的地点过来，"
+            "travel_mode=walk 写成“步行约 X 分钟”，drive 写成“约 X 分钟车程”；"
+            "为空的不要自己估算，也不要提交通。"
+        )
+
+        async def write_day(day: ItineraryDay) -> ItineraryDay:
+            """一天一次调用、几天并行：比整份行程一次写完快，某天写坏了也只有那天退回模板。"""
+            messages = [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": (
+                        f"需求：{requirement.model_dump_json()}\n"
+                        f"研究结果：\n{evidence_digest}\n"
+                        f"这是第 {day.day} 天（共 {len(template)} 天）的模板：{day.model_dump_json()}\n"
+                        "请用研究结果为模板里每个时段写描述，只返回这一天。"
+                    ),
+                },
+            ]
+            for attempt in range(_SYNTHESIS_ATTEMPTS):
+                try:
+                    response = _LLMItinerary.model_validate(await structured.ainvoke(messages))
+                    break
+                except Exception as exc:
+                    if attempt + 1 == _SYNTHESIS_ATTEMPTS:
+                        app_logger.warning(f"第{day.day}天成文失败，这一天用模板: {type(exc).__name__}")
+                        return day
+                    app_logger.warning(f"第{day.day}天成文第 {attempt + 1} 次未返回有效结果，重试: {type(exc).__name__}")
+            if len(response.days) != 1:
+                app_logger.warning(f"第{day.day}天成文返回了 {len(response.days)} 天，这一天用模板")
+                return day
+            return _merge_day(response.days[0], day)
+
+        return list(await asyncio.gather(*(write_day(day) for day in template)))
     except Exception as exc:
         app_logger.warning(
             f"LLM itinerary synthesis failed; using deterministic template: llm_synthesis_failed "
