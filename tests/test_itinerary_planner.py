@@ -743,3 +743,14 @@ def test_dinner_on_the_way_back_to_the_hotel_beats_one_just_behind_the_last_stop
 
     assert _pick_dinner(["背道店", "顺路店"], set(), "锦里", costs, "武侯酒店") == "顺路店"
     assert _pick_dinner(["背道店", "顺路店"], set(), "锦里", costs) == "背道店"
+
+
+def test_a_short_hop_is_a_walk_even_when_a_driving_time_is_known():
+    def at(name, lat, lng):
+        return option(name, "attractions", latitude=lat, longitude=lng)
+
+    costs = TravelCosts([result("attractions", [at("上海中心", 31.2335, 121.5055), at("东方明珠", 31.2397, 121.4998)]),
+                         result("transport", [leg("上海中心", "东方明珠", 12)])])
+
+    minutes, mode = costs.leg("上海中心", "东方明珠")
+    assert mode == "walk" and minutes <= 20  # 走过去约一刻钟，比开车略慢但更符合实际

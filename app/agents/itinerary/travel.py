@@ -112,12 +112,15 @@ class TravelCosts:
         if first is None or second is None or first == second:
             return None, None
         key = frozenset((first, second))
-        if key in self._minutes:
-            return self._minutes[key], "drive"
+        km = None
         if first in self._coordinates and second in self._coordinates:
             km = straight_line_km(self._coordinates[first], self._coordinates[second])
-            if km <= WALK_KM:
-                return round(2 + km * _WALK_MINUTES_PER_KM), "walk"
+        # 近到走过去就行的，即使有驾车实测也按步行：上海中心到东方明珠几百米，写"12 分钟车程"不合理
+        if km is not None and km <= WALK_KM:
+            return round(2 + km * _WALK_MINUTES_PER_KM), "walk"
+        if key in self._minutes:
+            return self._minutes[key], "drive"
+        if km is not None:
             return _minutes_from_km(km), "drive"
         return None, None
 
