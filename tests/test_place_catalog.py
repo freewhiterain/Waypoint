@@ -311,3 +311,17 @@ def test_theme_parks_do_not_crowd_ordinary_sights_out_of_the_shortlist(tmp_path)
 
     assert sum(name.startswith("景点") for name in names) == 9  # 普通景点名额不被乐园占
     assert sum("迪士尼" in name for name in names) == 2
+
+
+def test_hotel_candidates_are_the_central_ones_among_popular_hotels(tmp_path):
+    sights = ["city,rank,name,type,latitude,longitude,open_time,close_time,price,min_hours,max_hours"]
+    sights += [f"上海,{i},景点{i},人文景观,31.23,121.47,08:00,18:00,0,1,2" for i in range(5)]
+    hotels = ["city,rank,name,type,latitude,longitude,price,beds"]
+    hotels += [f"上海,{i},远郊酒店{i},温泉,31.19,121.71,400,2" for i in range(8)]  # 约 23km
+    hotels += [f"上海,{i + 8},市中心酒店{i},商务,31.235,121.475,450,2" for i in range(3)]
+    (tmp_path / "attractions.csv").write_text("\n".join(sights) + "\n", encoding="utf-8")
+    (tmp_path / "hotels.csv").write_text("\n".join(hotels) + "\n", encoding="utf-8")
+
+    names = [record.name for record in PlaceCatalog(tmp_path).shortlist(requirement(destination="上海"), "hotel")]
+
+    assert names[:3] == ["市中心酒店0", "市中心酒店1", "市中心酒店2"]

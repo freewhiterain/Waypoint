@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import re
+from statistics import median
 
 import csv
 import math
@@ -33,6 +34,8 @@ _FILES: dict[PlaceCategory, str] = {
 
 # 候选交给排日程的模型挑选，数量随天数增加，但要控制在提示词放得下的范围。
 MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 40, 8
+# 酒店先取热门的前这么多家，再按离景点中心远近挑 HOTEL_SHORTLIST 家。
+HOTEL_POOL = 30
 # 不适合当正餐的类型。
 _NOT_A_MEAL = {"面包甜点", "咖啡店", "酒吧/酒馆", "茶馆/茶室", ""}
 _SPICY = {"川菜", "湘菜", "火锅"}
@@ -205,13 +208,33 @@ class PlaceCatalog:
                     return record
         return None
 
+    def _central_hotels(self, requirement: TravelRequirement, hotels: list[PlaceRecord]) -> list[PlaceRecord]:
+        """热门的前 HOTEL_POOL 家里，取离热门景点中心最近的 HOTEL_SHORTLIST 家。
+
+        原来直接取热门前 8 家，上海有两家在 30 多公里外（川沙、虹桥一带），北京有一家 47 公里；
+        候选本身就偏远时，排程再挑"最近的那家"也没用，评审反复说"每天先开半小时车进城"。
+        """
+        pool = hotels[:HOTEL_POOL]
+        sights = [record for record in self.places(requirement.destination, "attractions")[:HOTEL_POOL]
+                  if record.latitude is not None and record.longitude is not None]
+        if len(sights) < 3:
+            return pool[:HOTEL_SHORTLIST]
+        center = (median(record.latitude for record in sights), median(record.longitude for record in sights))
+
+        def distance(record: PlaceRecord) -> float:
+            if record.latitude is None or record.longitude is None:
+                return float("inf")
+            return straight_line_km(center, (record.latitude, record.longitude))
+
+        return sorted(pool, key=distance)[:HOTEL_SHORTLIST]
+
     def shortlist(self, requirement: TravelRequirement, category: PlaceCategory) -> list[PlaceRecord]:
         """交给排日程挑选的候选：热门的在前，命中用户偏好的优先。"""
         records = self.places(requirement.destination, category)
         if not records:
             return []
         if category == "hotel":
-            return _affordable_hotels(records, requirement)[:HOTEL_SHORTLIST]
+            return self._central_hotels(requirement, _affordable_hotels(records, requirement))
         limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
         extra: list[PlaceRecord] = []
         if category == "food":
