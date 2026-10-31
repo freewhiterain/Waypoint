@@ -198,6 +198,30 @@ def scenarios() -> list[Scenario]:
             must_contain=["元"],
         ),
         Scenario(
+            name="qa_worth_visiting",
+            turns=["西湖值得专门去一趟吗，大概要玩多久"],
+            expect_route="token",
+            must_contain=["西湖"],
+        ),
+        Scenario(
+            name="qa_intercity_transport",
+            turns=["从成都到重庆怎么走比较方便"],
+            expect_route="token",
+            must_contain=["高铁"],
+        ),
+        Scenario(
+            name="qa_reservation",
+            turns=["去北京故宫需要提前预约吗"],
+            expect_route="token",
+            must_contain=["预约"],
+        ),
+        Scenario(
+            name="qa_local_food",
+            turns=["杭州有什么特色菜推荐"],
+            expect_route="token",
+            must_contain=["杭州"],
+        ),
+        Scenario(
             name="recommend_destination",
             turns=["国庆不知道去哪玩，推荐几个城市"],
             expect_route="token",
