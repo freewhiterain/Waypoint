@@ -93,3 +93,12 @@ def test_a_place_mentioned_with_a_negation_is_not_a_must_visit():
     slots, _ = apply_slot_update(SLOTS, SlotUpdate(must_visit=["成都大熊猫繁育研究基地"]),
                                  user_text="熊猫基地一定要去，不想太累", today=TODAY)
     assert slots.must_visit == ["成都大熊猫繁育研究基地"]
+
+
+def test_a_dish_put_into_must_visit_becomes_a_food_preference():
+    slots, _ = apply_slot_update(
+        SLOTS, SlotUpdate(must_visit=["火锅", "洪崖洞"]), user_text="想吃火锅，洪崖洞必须去", today=TODAY,
+    )
+
+    assert slots.must_visit == ["洪崖洞"]
+    assert "火锅" in slots.food_preferences

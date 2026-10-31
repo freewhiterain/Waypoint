@@ -71,10 +71,11 @@ class RecordingDeepSearch:
 
 @pytest.mark.asyncio
 async def test_attractions_subagent_returns_evidence_bound_candidates():
+    # 退回证据摘要时候选名取证据第一行：第一行得是地名，整句话会被"像不像地名"的检查丢掉
     agent = AttractionsSubagent(
         rag=FakeProvider(
             "local_rag",
-            [Evidence(id="ev-rag", content="Panda Base is a family-friendly attraction.", source="local")],
+            [Evidence(id="ev-rag", content="Panda Base\nA family-friendly attraction.", source="local")],
         ),
         search=FakeProvider("search_mcp", []),
     )
@@ -136,7 +137,7 @@ async def test_hotel_subagent_falls_back_from_empty_rag_to_hotel_provider_before
     rag = FakeProvider("local_rag", [])
     hotel = FakeProvider(
         "hotel_mcp",
-        [Evidence(id="ev-hotel", content="Hotel near Tianfu Square has family rooms.", source="hotel")],
+        [Evidence(id="ev-hotel", content="Tianfu Square Hotel\nNear the square, has family rooms.", source="hotel")],
     )
     search = FakeProvider("search_mcp", [])
     agent = HotelSubagent(rag=rag, hotel_mcp=hotel, search=search)
@@ -157,7 +158,7 @@ async def test_food_subagent_uses_bounded_deep_search_only_after_rag_and_search_
     deep_report = ResearchReport(
         status="completed",
         summary="Found current food evidence.",
-        evidence=[Evidence(id="ev-deep", content="Try mapo tofu at a current listed restaurant.", source="web")],
+        evidence=[Evidence(id="ev-deep", content="Chen Mapo Tofu\nTry mapo tofu at this listed restaurant.", source="web")],
     )
     deep_search = RecordingDeepSearch(deep_report)
     agent = FoodSubagent(

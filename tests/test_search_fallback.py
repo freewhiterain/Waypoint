@@ -216,3 +216,20 @@ def test_attraction_search_adds_one_query_for_the_users_interest():
     assert web_search_queries(payload)[-1] == "西安 历史 景点"
     assert "西安 美食 景点" not in web_search_queries({**payload, "styles": ["美食"]})
     assert "西安 历史 景点" not in web_search_queries({**payload, "category": "food"})
+
+
+@pytest.mark.parametrize(
+    ("name", "kept"),
+    [
+        ("大雁塔- 西安必游景点，千年古塔", False),
+        ("早餐后游览“世界第八大奇迹”——", False),
+        ("住在西安热门景点附近", False),
+        ("秦始皇帝陵博物院(兵马俑)", True),
+        ("茶人村·只此江南", True),
+        ("“快乐船长”黄浦江游船", True),
+    ],
+)
+def test_page_titles_and_sentences_are_not_place_candidates(name, kept):
+    from app.agents.subagents.base import looks_like_place_name
+
+    assert looks_like_place_name(name) is kept

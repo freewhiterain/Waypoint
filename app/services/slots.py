@@ -56,6 +56,11 @@ def _mentions_place(text: str, place: str) -> bool:
 
 
 _NEGATION = ("没", "不", "别", "未", "无")
+# 是吃的东西、不是地点：出现在"必去"里时挪到口味
+_DISH_WORDS = {
+    "火锅", "烧烤", "海鲜", "烤鸭", "早茶", "串串", "小吃", "美食", "面馆", "川菜", "粤菜", "本帮菜", "杭帮菜",
+    "江浙菜", "湘菜", "北京菜", "西餐", "日料", "日本料理", "自助餐", "夜宵", "甜品", "咖啡",
+}
 
 
 def _negated_mention(text: str, place: str) -> bool:
@@ -176,7 +181,12 @@ def apply_slot_update(
     values["avoid_places"] = list(dict.fromkeys([*values.get("avoid_places", []), *kept_avoid]))[:_MAX_LIST_ITEMS]
 
     # 点名要去的地点同样要用户亲口说过；后来又说不去的，以不去为准。
-    must = [place.strip() for place in update.must_visit if place.strip()]
+    # 模型偶尔把"想吃火锅"的火锅也放进必去：吃什么挪到口味里，必去只留地点。
+    # 否则地点库会把店名带"火锅"的都当成点名要去的，连人均 488 元的也绕过价格上限排进来。
+    dishes = [place.strip() for place in update.must_visit if place.strip() in _DISH_WORDS]
+    if dishes:
+        update = update.model_copy(update={"food_preferences": [*update.food_preferences, *dishes]})
+    must = [place.strip() for place in update.must_visit if place.strip() and place.strip() not in _DISH_WORDS]
     kept_must = [
         place for place in must
         if len(place) <= 30 and _mentions_place(user_text, place) and not _negated_mention(user_text, place)

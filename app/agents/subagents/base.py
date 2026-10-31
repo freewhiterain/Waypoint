@@ -56,6 +56,25 @@ def _normalize_number(token: str) -> str:
     return str(int(value)) if value == int(value) else token
 
 
+
+# 像标题、攻略句子而不是地名的候选：搜索结果解析失败时，候选名会是网页标题
+# （"大雁塔- 西安必游景点，千年古塔""早餐后游览'世界第八大奇迹'——"），排进行程就是一整天空白。
+_NOT_A_NAME_MARKS = ("——", "，", "。", "！", "？", "|", "【", "】", "- ")
+_NOT_A_NAME_WORDS = ("攻略", "必游", "必去", "推荐", "排名", "排行", "早餐后", "住在", "打卡", "大全", "门票预订")
+# 括号外的部分不超过这么长：酒店里的餐厅名可以很长（"上海锦江都城经典南京东路外滩酒店·环球西餐厅"），
+# 整句的标题、攻略更长，而且上面的标点和词已经能挡住大部分
+MAX_PLACE_NAME_CHARS = 40
+
+
+def looks_like_place_name(name: str) -> bool:
+    name = name.strip()
+    base = name.split("(")[0].split("（")[0]
+    return (
+        1 < len(base) <= MAX_PLACE_NAME_CHARS
+        and not any(mark in name for mark in _NOT_A_NAME_MARKS)
+        and not any(word in name for word in _NOT_A_NAME_WORDS)
+    )
+
 class SubagentAnalysis(BaseModel):
     """Validated model output before evidence grounding."""
 
@@ -399,6 +418,9 @@ class DomainSubagent:
 
         candidates: list[EvidenceBoundCandidate] = []
         for candidate in analysis.candidates:
+            if not looks_like_place_name(candidate.name):
+                warnings.append("Dropped a candidate whose name is not a place name.")
+                continue
             candidate_ids = set(candidate.evidence_ids)
             referenced_text = " ".join(
                 evidence_by_id[evidence_id].content
