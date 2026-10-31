@@ -190,11 +190,13 @@ export function MessageItem({ message, interactive }: { message: ChatMessage; in
             ))}
           </div>
         )}
+        {/* 表单前的说明（"这次先规划成都……"）放在表单上面 */}
+        {message.trip && message.content && !message.plan && <Markdown>{message.content}</Markdown>}
         {message.trip && <TripCard messageId={message.id} trip={message.trip} interactive={interactive} />}
         {message.plan ? (
           <PlanSummary message={message} />
         ) : (
-          message.content && (
+          message.content && !message.trip && (
             <div className={clsx(message.error && "rounded-xl bg-red-50 px-4 py-3 text-red-600 dark:bg-red-500/10 dark:text-red-300")}>
               <Markdown>{message.content}</Markdown>
             </div>
