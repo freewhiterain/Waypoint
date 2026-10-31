@@ -48,8 +48,8 @@ def test_planner_runs_transport_after_the_places_it_connects():
 
     groups = parallel_groups(tasks)
     assert [{task.task_type for task in group} for group in groups] == [
-        {"attractions", "hotel", "food", "weather"},
-        {"transport"},
+        {"attractions", "hotel", "food"},
+        {"transport", "weather"},
     ]
 
 

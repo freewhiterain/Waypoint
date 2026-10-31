@@ -6,8 +6,8 @@ from app.schemas.planning import ResearchTask, TravelRequirement
 def create_research_plan(requirement: TravelRequirement) -> list[ResearchTask]:
     """Generate five research tasks in two dependency groups.
 
-    景点、住宿、美食、天气互不依赖，第一批并行；交通查的是这些地点之间的
-    市内交通，必须等景点、住宿、美食出了候选才能算，所以作为第二批。
+    景点、住宿、美食互不依赖，第一批并行；交通查的是这些地点之间的市内交通，
+    必须等它们出了候选才能算。天气谁也不依赖它，和交通一起放在第二批（见 parallel_groups）。
     """
     destination = requirement.destination
     common_criteria = ["返回结构化候选项", "事实结论附带 Evidence", "缺失实时数据时明确降级"]
@@ -57,4 +57,14 @@ def parallel_groups(tasks: list[ResearchTask]) -> list[list[ResearchTask]]:
             completed.add(task.id)
             remaining.pop(task.id)
 
+    # 没有别的任务依赖它的（天气）推到最后一批：批与批之间要等齐，天气接口慢时（Open-Meteo 常要 6~7 秒）
+    # 放在第一批会白白拖住交通。放到最后一批和交通并行，总耗时少一截。
+    if len(groups) > 1:
+        needed = {dependency for task in tasks for dependency in task.dependencies}
+        for group in groups[:-1]:
+            leaves = [task for task in group if task.id not in needed]
+            if len(leaves) < len(group):
+                for task in leaves:
+                    group.remove(task)
+                    groups[-1].append(task)
     return groups

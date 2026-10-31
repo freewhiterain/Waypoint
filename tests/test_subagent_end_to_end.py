@@ -84,9 +84,9 @@ async def test_confirmed_trip_runs_four_subagents_in_parallel_then_transport_and
     assert result.warnings == []
     assert set(subagent.started) == WORKERS
     assert set(subagent.completed) == WORKERS
-    # 第一批景点/住宿/美食/天气并行；交通依赖前三者的候选，最后单独跑。
-    assert subagent.max_active == 4
-    assert subagent.started[-1] == "transport"
+    # 第一批景点/住宿/美食并行；交通依赖前三者的候选，和谁也不依赖的天气一起在第二批跑。
+    assert subagent.max_active == 3
+    assert set(subagent.started[-2:]) == {"transport", "weather"}
 
 
 @pytest.mark.asyncio
