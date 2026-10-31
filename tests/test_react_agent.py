@@ -393,3 +393,20 @@ def test_system_prompt_tells_the_model_today_s_date():
     from app.services.react_agent import _system_prompt
 
     assert date.today().isoformat() in _system_prompt(TripSlots())
+
+
+@pytest.mark.asyncio
+async def test_knowledge_search_never_returns_another_citys_material(monkeypatch):
+    from app.rag import local_knowledge
+    from app.schemas.planning import Evidence
+    from app.services import react_agent
+
+    class Knowledge:
+        def search(self, _query):
+            return [Evidence(content="成都住宿推荐春熙路片区", source="成都攻略", metadata={"destination": "成都"})]
+
+    monkeypatch.setattr(local_knowledge, "get_local_knowledge_service", lambda: Knowledge())
+
+    outcome = await react_agent._search_travel_knowledge("住宿片区", destination="杭州")
+
+    assert outcome.status == "empty" and "成都" not in outcome.text

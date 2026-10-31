@@ -104,7 +104,7 @@ def items_from_log(path: Path) -> list[dict[str, Any]]:
             text = _text_of(forms[-1]["events"])
             if "## 第1天" in text:
                 items.append({**base, "kind": "plan", "plan": text})
-        elif transcript and result["name"] != "chitchat":
+        elif transcript and result["name"] not in ("chitchat", "off_topic"):  # 寒暄和越界本来就不该给答案
             text = _text_of(transcript[-1]["events"])
             if text.strip():
                 items.append({**base, "kind": "qa", "plan": text})

@@ -99,6 +99,12 @@ class TravelTimeArgs(BaseModel):
     places: list[str] = Field(description="要比较的地点名称，至少两个", min_length=2, max_length=6)
 
 
+def _mentions_city(item: Any, city: str) -> bool:
+    metadata = getattr(item, "metadata", None) or {}
+    tagged = {str(metadata.get(key) or "") for key in ("destination", "city")}
+    return city in tagged or city in (item.content or "") or city in (item.source or "")
+
+
 async def _search_travel_knowledge(query: str, destination: str | None = None, category: str | None = None) -> ToolOutcome:
     from app.rag.local_knowledge import get_local_knowledge_service
 
@@ -107,6 +113,9 @@ async def _search_travel_knowledge(query: str, destination: str | None = None, c
         evidence = knowledge.search_destination(destination, category, query)
     else:
         evidence = knowledge.search(" ".join(part for part in (destination, query) if part))
+    if destination:
+        # 本地资料只有少数城市：按语义找最像的，会把成都的住宿资料当成杭州的返回。只留提到这个城市的。
+        evidence = [item for item in evidence if _mentions_city(item, destination)]
     if not evidence:
         return ToolOutcome(text="本地资料里没有查到相关内容。", status="empty")
     lines = [f"[{index + 1}] {item.content}（来源：{item.source}）" for index, item in enumerate(evidence[:_MAX_EVIDENCE_ITEMS])]
@@ -270,12 +279,16 @@ def _system_prompt(slots: TripSlots) -> str:
             f"今天是 {date.today().isoformat()}（周{'一二三四五六日'[date.today().weekday()]}），涉及日期时以此推算。",
             "你可以调用工具查资料。先想清楚需要什么信息，再决定调用哪个工具；一次可以调用多个。",
             "规则：",
-            "1. 事实只能来自工具返回的内容和用户自己说过的话。工具没有查到的，直接告诉用户没有查到，"
-            "不要编造价格、营业时间、班次、天气、距离或任何具体数字。",
-            "2. 资料已经够回答时就直接回答，不要重复调用同一个工具查同样的内容。",
-            "3. 推荐目的地时说明理由，理由要来自查到的资料。",
-            "4. 你不负责生成完整的逐日行程。用户想要行程时，告诉他直接说“帮我规划”即可。",
-            "5. 用中文回答，简洁、条理清楚，适合直接展示给用户。",
+            "1. 具体数字（价格、营业时间、班次、天气、距离）只能来自工具返回的内容和用户说过的话，"
+            "工具没有查到就明说没查到，不要编造。",
+            "2. 广为人知的一般情况可以直接回答，用“一般”“通常”说明，并告诉用户去哪确认细节："
+            "比如两个城市之间通常坐高铁还是飞机、热门景点要不要提前实名预约、某地有哪些代表菜。"
+            "不要因为工具没查到就整个拒答。",
+            "3. 给出数字时顺带说明来源：天气预报、地点库数据、按价格估算，或“大约”。",
+            "4. 资料已经够回答时就直接回答，不要重复调用同一个工具查同样的内容。",
+            "5. 推荐目的地时说明理由，理由要来自查到的资料。",
+            "6. 你不负责生成完整的逐日行程。用户想要行程时，告诉他直接说“帮我规划”即可。",
+            "7. 用中文回答，先给结论再补充，简洁、条理清楚，适合直接展示给用户。",
             f"用户目前已经确定的信息：{known}",
         ]
     )
