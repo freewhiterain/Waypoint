@@ -194,6 +194,14 @@ def scenarios() -> list[Scenario]:
             must_not_contain=["第4天"],
         ),
         Scenario(
+            name="multi_city_first_leg",
+            # 一份行程只排一个城市：先排成都 3 天，天数不能把重庆的 2 天加进去
+            turns=[f"{soon}出发，先去成都玩三天再去重庆玩两天，帮我规划"],
+            expect_prefill={"destination": "成都", "days": 3, "departure_date": soon},
+            must_contain=["第3天"],
+            must_not_contain=["第4天"],
+        ),
+        Scenario(
             name="open_question_weather",
             turns=["成都最近天气怎么样"],
             expect_route="token",

@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -23,6 +24,16 @@ from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
 from app.services.open_qa import answer_open_question
 from app.services.requirements import KNOWN_DESTINATIONS
+
+_NEXT_CITY_CUE = re.compile(r"(再|然后|接着|之后|顺路|最后)(去|到|玩)")
+
+
+def later_cities(message: str, destination: str | None) -> list[str]:
+    """"先去成都三天再去重庆两天"里排在后面的城市。只有出现"再去/然后去"这类说法才算。"""
+    if not destination or not _NEXT_CITY_CUE.search(message):
+        return []
+    found = sorted((message.find(city), city) for city in KNOWN_DESTINATIONS if city in message and city != destination)
+    return [city for position, city in found if position > message.find(destination)]
 from app.services.react_agent import build_react_tools, run_react_agent
 from app.services.slots import (
     PostgresSlotRepository,
@@ -253,6 +264,12 @@ async def generate_sse_stream(
                             extra_info={"action": decision.action, "tool_call": payload.model_dump()},
                         )
                     )
+            later = later_cities(user_message, slots.destination)
+            if later:
+                # 一份行程只排一个城市：先说清楚，别让第二个城市悄悄消失
+                notice = (f"一份行程先排一个城市：这次先规划{slots.destination}。"
+                          f"排好后说“再规划{later[0]}”，我接着帮你排{later[0]}。")
+                yield sse(event("token", {"content": notice, "action": decision.action}))
             yield sse(event("tool_call", payload.model_dump()))
             yield sse(event("done"))
             return
