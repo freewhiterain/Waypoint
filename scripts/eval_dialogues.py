@@ -179,6 +179,21 @@ def scenarios() -> list[Scenario]:
             must_not_contain=["熊猫", "第3天"],
         ),
         Scenario(
+            name="chengdu_add_place_after_plan",
+            turns=[f"帮我规划成都两天的行程，{soon}出发"],
+            revise=["再把金沙遗址博物馆加进去"],
+            expect_prefill={"destination": "成都", "days": 2, "departure_date": soon},
+            must_contain=["金沙遗址博物馆"],
+        ),
+        Scenario(
+            name="hangzhou_extend_days_after_plan",
+            turns=[f"帮我规划杭州两天的行程，{soon}出发"],
+            revise=["还是改成三天吧"],
+            expect_prefill={"destination": "杭州", "days": 2, "departure_date": soon},
+            must_contain=["第3天"],
+            must_not_contain=["第4天"],
+        ),
+        Scenario(
             name="open_question_weather",
             turns=["成都最近天气怎么样"],
             expect_route="token",
