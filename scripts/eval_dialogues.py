@@ -165,7 +165,8 @@ def scenarios() -> list[Scenario]:
             name="hangzhou_elderly_relaxed",
             turns=[f"{soon}带爸妈去杭州玩两天，老人腿脚不好别太累，帮我规划"],
             expect_prefill={"destination": "杭州", "days": 2, "departure_date": soon},
-            must_contain=["轻松"],
+            # "轻松"由 plan_checks 按结构判定（每天最多一个景点），描述写成"不要太赶"也对
+            must_contain=["第2天"],
         ),
         Scenario(
             name="chengdu_revise_after_plan",

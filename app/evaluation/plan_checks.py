@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
-from app.agents.itinerary.rules import SIGHT_PERIOD_WINDOWS, is_full_day_name, same_place
+from app.agents.itinerary.rules import SIGHT_PERIOD_WINDOWS, _wants_relaxed_trip, is_full_day_name, same_place
 from app.agents.trip_cost import estimate_trip_cost
 from app.places.catalog import PlaceCatalog, get_place_catalog, named_by
 from app.schemas.planning import ItineraryDay, TravelRequirement
@@ -121,7 +121,7 @@ def check_plan(
             logic(f"第{day.day}天整天没有安排任何景点")
         if len(sights) > 1 and any(is_full_day_name(slot.title) for slot in sights):
             logic(f"第{day.day}天的{'、'.join(slot.title for slot in sights)}里有要玩一整天的乐园，不该再排别的")
-        if day.day in requirement.relaxed_days and len(sights) > 1:
+        if (day.day in requirement.relaxed_days or _wants_relaxed_trip(requirement)) and len(sights) > 1:
             logic(f"第{day.day}天要求轻松，却排了 {len(sights)} 个景点")
 
     titles = [slot.title for day in itinerary for slot in day.slots]

@@ -123,3 +123,12 @@ def test_a_whole_day_without_sights_is_flagged():
             day(2, slot("morning", "上海分区自由活动"), slot("afternoon", "自由活动"), slot("evening", "面馆"))]
 
     assert any("第2天整天没有安排任何景点" in issue.message for issue in check_plan(requirement, plan, Catalog()))
+
+
+def test_a_relaxed_trip_with_two_sights_a_day_is_flagged():
+    requirement = TravelRequirement(destination="杭州", departure_date=START, days=1, styles=["老人腿脚不好别太累"])
+    busy = [day(1, slot("morning", "灵隐寺"), slot("afternoon", "西湖"), slot("evening", "饭馆"))]
+    calm = [day(1, slot("morning", "灵隐寺"), slot("afternoon", "自由活动"), slot("evening", "饭馆"))]
+
+    assert any("要求轻松" in issue.message for issue in check_plan(requirement, busy, Catalog()))
+    assert not any("要求轻松" in issue.message for issue in check_plan(requirement, calm, Catalog()))
