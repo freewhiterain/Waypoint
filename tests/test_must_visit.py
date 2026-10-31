@@ -81,3 +81,15 @@ def test_unknown_named_place_is_reported_instead_of_silently_dropped():
 
     assert any(item.code == "must_visit" and "没查到" in item.message for item in violations)
     assert any("不存在的景点" in issue.message for issue in report)
+
+
+def test_a_place_mentioned_with_a_negation_is_not_a_must_visit():
+    slots, dropped = apply_slot_update(
+        SLOTS, SlotUpdate(must_visit=["成都大熊猫繁育研究基地"]),
+        user_text="行程里没安排熊猫基地，不过第二天想轻松点", today=TODAY,
+    )
+    assert slots.must_visit == [] and "must_visit" in dropped
+
+    slots, _ = apply_slot_update(SLOTS, SlotUpdate(must_visit=["成都大熊猫繁育研究基地"]),
+                                 user_text="熊猫基地一定要去，不想太累", today=TODAY)
+    assert slots.must_visit == ["成都大熊猫繁育研究基地"]

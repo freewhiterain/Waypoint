@@ -55,6 +55,30 @@ def _mentions_place(text: str, place: str) -> bool:
     return previous[-1] >= min(3, len(place))
 
 
+_NEGATION = ("没", "不", "别", "未", "无")
+
+
+def _negated_mention(text: str, place: str) -> bool:
+    """原话里提到这个地点时前面带着否定："行程里没安排熊猫基地"是在陈述，不是要去。
+
+    模型会把短名补全（熊猫基地 → 成都大熊猫繁育研究基地），所以找两者最长的公共片段在原话里的位置。
+    """
+    fragment = ""
+    for start in range(len(place)):
+        for end in range(len(place), start + max(1, len(fragment)), -1):
+            if place[start:end] in text and end - start > len(fragment):
+                fragment = place[start:end]
+                break
+    if len(fragment) < 2:
+        return False
+    position = text.find(fragment)
+    while position != -1:
+        if any(word in text[max(0, position - 4):position] for word in _NEGATION):
+            return True
+        position = text.find(fragment, position + 1)
+    return False
+
+
 def _dedupe(items: list[str]) -> list[str]:
     cleaned = [item.strip() for item in items if isinstance(item, str) and 0 < len(item.strip()) <= 10]
     return list(dict.fromkeys(cleaned))[:_MAX_LIST_ITEMS]
@@ -145,7 +169,10 @@ def apply_slot_update(
 
     # 点名要去的地点同样要用户亲口说过；后来又说不去的，以不去为准。
     must = [place.strip() for place in update.must_visit if place.strip()]
-    kept_must = [place for place in must if len(place) <= 30 and _mentions_place(user_text, place)]
+    kept_must = [
+        place for place in must
+        if len(place) <= 30 and _mentions_place(user_text, place) and not _negated_mention(user_text, place)
+    ]
     if len(kept_must) < len(must):
         dropped.append("must_visit")
     merged = list(dict.fromkeys([*values.get("must_visit", []), *kept_must]))
