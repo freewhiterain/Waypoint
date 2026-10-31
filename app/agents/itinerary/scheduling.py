@@ -7,6 +7,7 @@ from itertools import permutations
 from app.places.catalog import is_local_food
 from app.schemas.planning import CandidateOption, ItineraryDay, TimeSlot, TravelRequirement, WorkerResult
 from app.agents.itinerary.rules import (
+    outskirts_area,
     ATTRACTIONS_PER_DAY,
     _avoided,
     _base_name,
@@ -303,8 +304,10 @@ def build_itinerary(
             continue
         taken = {preferred[place_id] for place_id in full_day}
         if not is_full_day(option):
+            area = outskirts_area(option.name)
             near = next((day for other, day in excursion_days.items()
-                         if costs.cost(other, item.id) <= MAX_HOP_MINUTES), None)
+                         if costs.cost(other, item.id) <= MAX_HOP_MINUTES
+                         or (area is not None and outskirts_area(options[other].name) == area)), None)
             if near is not None:
                 if capacities[near - 1] >= ATTRACTIONS_PER_DAY:
                     continue

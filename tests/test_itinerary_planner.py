@@ -317,6 +317,7 @@ async def test_the_same_restaurant_is_not_repeated_on_later_evenings():
         ("楼外楼(西湖景区孤山路店)", "西湖风景名胜区", False),  # 括号里的分店名不算
         ("四季民福烤鸭店(故宫店)", "故宫博物院", False),
         ("南京大牌档(夫子庙平江府店)", "夫子庙", False),
+        ("秦始皇帝陵博物院(兵马俑)", "兵马俑", True),  # 括号里是别名
     ],
 )
 def test_same_place_recognises_different_names_for_one_spot(first, second, expected):
@@ -710,3 +711,21 @@ async def test_two_famous_outskirts_sights_next_to_each_other_share_a_day():
     excursion = next(day for day in itinerary if any("兵马俑" in slot.title for slot in day.slots))
     sights = {slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")}
     assert sights == {"秦始皇帝陵博物院(兵马俑)", "华清宫"}
+
+
+@pytest.mark.asyncio
+async def test_outskirts_in_the_same_area_share_a_day_without_coordinates():
+    results = chengdu_results(LEGS)  # 兵马俑和华清池之间没有路程数据
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options += [option("兵马俑", "attractions"), option("华清池", "attractions")]
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="兵马俑"), SelectedPlace(id="武侯祠"), SelectedPlace(id="华清池"),
+                     SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    excursion = next(day for day in itinerary if any(slot.title == "兵马俑" for slot in day.slots))
+    assert {slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")} == {"兵马俑", "华清池"}

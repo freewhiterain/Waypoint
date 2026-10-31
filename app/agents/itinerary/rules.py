@@ -7,7 +7,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from app.places.catalog import is_theme_park, straight_line_km
+from app.places.catalog import is_theme_park, named_by, straight_line_km
 from app.schemas.planning import CandidateOption, TravelRequirement, WorkerResult
 
 
@@ -120,11 +120,24 @@ def is_full_day(option: CandidateOption) -> bool:
 
 def is_excursion(option: CandidateOption, remote: set[str] | None = None) -> bool:
     """远郊景点：往返就要大半天，单独给一天；挨着的几处可以同一天。"""
-    return option.id in (remote or set()) or any(word in option.name for word in _FAMOUS_OUTSKIRTS)
+    return option.id in (remote or set()) or outskirts_area(option.name) is not None
+
+
+def outskirts_area(name: str) -> str | None:
+    """按名字认出的远郊属于哪一片：同一片的（兵马俑和华清池都在临潼）可以排在同一天。"""
+    return next((area for area, words in _FAMOUS_OUTSKIRTS.items() if any(word in name for word in words)), None)
 
 
 # 没有坐标时（联网搜索的城市）认不出远郊，按名字补几处常见的：兵马俑在临潼、长城在延庆怀柔。
-_FAMOUS_OUTSKIRTS = ("兵马俑", "秦始皇帝陵", "华清", "骊山", "长城", "千岛湖", "青城山", "峨眉山", "乐山大佛", "黄山")
+# 按片区分组：没有坐标时算不出两处多远，同一片的就当挨着。
+_FAMOUS_OUTSKIRTS = {
+    "临潼": ("兵马俑", "秦始皇帝陵", "华清", "骊山"),
+    "长城": ("长城",),
+    "千岛湖": ("千岛湖",),
+    "都江堰青城山": ("青城山", "都江堰"),
+    "峨眉乐山": ("峨眉山", "乐山大佛"),
+    "黄山": ("黄山",),
+}
 
 
 # 住宿备注只留第一句：联网搜到的酒店描述常是整段订房评论。
@@ -263,7 +276,11 @@ def same_place(first: str, second: str, city: str = "") -> bool:
     if first == second:
         return True
     a, b = _core_name(first, city), _core_name(second, city)
-    return len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first))
+    if len(a) >= 2 and len(b) >= 2 and (a in _base_name(second) or b in _base_name(first)):
+        return True
+    # 括号里是别名时也算："秦始皇帝陵博物院(兵马俑)" 就是 "兵马俑"
+    return any(named_by(name, [other]) for name, other in ((first, _base_name(second)), (second, _base_name(first)))
+               if len(_base_name(other)) >= 2 and ("(" in name or "（" in name))
 
 
 # 模型选的酒店到所选景点的平均路程比最近的那家多出这么多（分钟量级），就换成最近的。
