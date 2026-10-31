@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -120,6 +120,14 @@ def apply_slot_update(
                 values["budget"] = None
                 values["avoid_places"] = []
                 values["relaxed_days"] = []
+                # 多城市行程的下一段：接着上一个城市结束的第二天出发，天数用当初说的。
+                # 用户这句话里另给了日期或天数的，下面照常覆盖。
+                leg = next((item for item in slots.next_legs if item.city == destination), None)
+                if leg is not None and slots.departure_date and slots.days:
+                    values["departure_date"] = slots.departure_date + timedelta(days=slots.days)
+                    if leg.days:
+                        values["days"] = leg.days
+                    values["next_legs"] = [item.model_dump() for item in slots.next_legs if item.city != destination]
             values["destination"] = destination
         else:
             dropped.append("destination")

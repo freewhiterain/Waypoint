@@ -20,12 +20,25 @@ from app.governance.drafts import load_trip_draft_context
 from app.governance.tool_invocations import PostgresToolInvocationRepository, ToolInvocationRecord
 from app.models.base import async_session_maker
 from app.models.message import Message
+from app.schemas.slots import NextLeg
 from app.schemas.tools import AgentToolResult, ToolCallPayload
 from app.services.main_agent import MainAgentService
 from app.services.open_qa import answer_open_question
 from app.services.requirements import KNOWN_DESTINATIONS
 
 _NEXT_CITY_CUE = re.compile(r"(再|然后|接着|之后|顺路|最后)(去|到|玩)")
+
+
+_CN_NUMBERS = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _leg_days(message: str, city: str) -> int | None:
+    """"再去重庆玩两天"里重庆那段的天数；没说就不填。"""
+    match = re.search(re.escape(city) + r"[^，。,；;]{0,6}?(\d+|[一两二三四五六七八九十])\s*天", message)
+    if not match:
+        return None
+    value = match.group(1)
+    return int(value) if value.isdigit() else _CN_NUMBERS.get(value)
 
 
 def later_cities(message: str, destination: str | None) -> list[str]:
@@ -266,6 +279,10 @@ async def generate_sse_stream(
                     )
             later = later_cities(user_message, slots.destination)
             if later:
+                slots = slots.model_copy(update={"next_legs": [
+                    NextLeg(city=city, days=_leg_days(user_message, city)) for city in later
+                ]})
+                await store_slots(slot_repository, conversation_id, slots)
                 # 一份行程只排一个城市：先说清楚，别让第二个城市悄悄消失
                 notice = (f"一份行程先排一个城市：这次先规划{slots.destination}。"
                           f"排好后说“再规划{later[0]}”，我接着帮你排{later[0]}。")

@@ -202,6 +202,15 @@ def scenarios() -> list[Scenario]:
             must_not_contain=["第4天"],
         ),
         Scenario(
+            name="multi_city_second_leg",
+            # 成都排完说"再规划重庆"：接着成都结束的第二天出发，玩当初说的 2 天
+            turns=[f"{soon}出发，先去成都玩三天再去重庆玩两天，帮我规划"],
+            revise=["再规划重庆"],
+            expect_prefill={"destination": "成都", "days": 3, "departure_date": soon},
+            must_contain=["重庆", "第2天", (date.fromisoformat(soon) + timedelta(days=3)).isoformat()],
+            must_not_contain=["第3天"],
+        ),
+        Scenario(
             name="open_question_weather",
             turns=["成都最近天气怎么样"],
             expect_route="token",

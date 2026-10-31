@@ -14,6 +14,11 @@ TurnIntent = Literal["plan", "open_question", "recommend_destination", "research
 ResearchTopic = Literal["attractions", "weather", "transport", "hotel", "food"]
 
 
+class NextLeg(BaseModel):
+    city: str
+    days: int | None = None
+
+
 class TripSlots(BaseModel):
     """一个会话当前已知的规划信息，存在 conversation.extra_info["trip_slots"]。"""
 
@@ -29,6 +34,8 @@ class TripSlots(BaseModel):
     food_preferences: list[str] = Field(default_factory=list)
     # 模型推荐过、用户还没明确接受的城市。只是候选，不等于目的地。
     suggested_destinations: list[str] = Field(default_factory=list)
+    # 一次说了几个城市时，排在后面、还没规划的那几段（"先去成都三天再去重庆两天"里的重庆 2 天）
+    next_legs: list[NextLeg] = Field(default_factory=list)
     # 点名要去的地点，以及看过行程后提的修改：不想去的地点、希望轻松些的第几天。换目的地时清空。
     must_visit: list[str] = Field(default_factory=list)
     budget: float | None = None
