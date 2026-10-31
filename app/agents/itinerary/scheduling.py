@@ -453,7 +453,44 @@ def build_itinerary(
                 notes=notes,
             )
         )
-    return ensure_wanted_food(requirement, results, itinerary, costs)
+    return limit_foreign_dinners(requirement, results, ensure_wanted_food(requirement, results, itinerary, costs), costs)
+
+
+def limit_foreign_dinners(
+    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts
+) -> list[ItineraryDay]:
+    """没点名要吃别的菜系时，非当地菜的晚饭每三天最多一顿（至少允许一顿），多出来的换成附近的当地菜。
+
+    模型评审两轮都提到"重庆两天两顿西餐""成都排德式西餐"：候选里当地菜排在前面，模型还是会挑西餐。
+    """
+    city = requirement.destination
+    asked = "".join([*requirement.food_preferences, *requirement.styles])
+    by_name = {option.name: option for worker in ("attractions", "food", "hotel") for option in _options(results, worker)}
+
+    def cuisine(title: str) -> str:
+        option = by_name.get(title)
+        return str(option.attributes.get("type") or "") if option else ""
+
+    def foreign(title: str) -> bool:
+        kind = cuisine(title)
+        return bool(kind) and not is_local_food(city, kind) and kind not in asked
+
+    days = [day.model_copy(deep=True) for day in itinerary]
+    allowed = max(1, len(days) // 3)
+    dinners = [(i, j) for i, day in enumerate(days) for j, slot in enumerate(day.slots)
+               if slot.period == "evening" and foreign(slot.title)]
+    local = [option for option in _candidates(results, "food", requirement)
+             if is_local_food(city, str(option.attributes.get("type") or "")) and _open_during(option, _DINNER_WINDOW)]
+    for day_index, slot_index in dinners[allowed:]:
+        eaten = {_base_name(slot.title) for day in days for slot in day.slots if slot.period in ("lunch", "evening")}
+        previous_title = days[day_index].slots[slot_index - 1].title if slot_index else None
+        previous = by_name[previous_title].id if previous_title in by_name else None
+        nearby = [option for option in local if _base_name(option.name) not in eaten
+                  and (previous is None or costs.cost(previous, option.id) <= MAX_DINNER_MINUTES)]
+        if nearby:
+            best = min(nearby, key=lambda option: costs.cost(previous, option.id) if previous else 0)
+            days[day_index].slots[slot_index] = _slot("evening", best, *costs.leg(previous, best.id))
+    return days
 
 
 def ensure_wanted_food(

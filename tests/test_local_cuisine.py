@@ -86,3 +86,26 @@ def test_lunch_avoids_a_place_in_the_opposite_direction():
         leg("熊猫基地", "顺路火锅", 20), leg("顺路火锅", "川剧院", 20), leg("熊猫基地", "川剧院", 35)])])
 
     assert _pick_lunch(list(options), set(), "熊猫基地", costs, options, "成都", after="川剧院") == "顺路火锅"
+
+
+def test_at_most_one_foreign_dinner_on_a_short_trip_unless_asked_for():
+    from app.agents.itinerary.scheduling import limit_foreign_dinners
+    from app.agents.itinerary.travel import TravelCosts
+    from app.schemas.planning import CandidateOption, ItineraryDay, TimeSlot, WorkerResult
+
+    def food(name, cuisine):
+        return CandidateOption(id=name, name=name, category="food", description="", evidence_ids=["e"],
+                               attributes={"type": cuisine})
+
+    options = [food("德式西餐", "西餐"), food("意大利餐", "西餐"), food("老火锅", "火锅")]
+    results = [WorkerResult(task_id="f", worker="food", status="completed", summary="", options=options)]
+    plan = [ItineraryDay(day=n, date=DAY, slots=[TimeSlot(period="evening", title=title)])
+            for n, title in ((1, "德式西餐"), (2, "意大利餐"))]
+    requirement = TravelRequirement(destination="重庆", departure_date=DAY, days=2)
+
+    fixed = limit_foreign_dinners(requirement, results, plan, TravelCosts(results))
+    asked = limit_foreign_dinners(requirement.model_copy(update={"food_preferences": ["西餐"]}),
+                                  results, plan, TravelCosts(results))
+
+    assert [day.slots[0].title for day in fixed] == ["德式西餐", "老火锅"]
+    assert [day.slots[0].title for day in asked] == ["德式西餐", "意大利餐"]
