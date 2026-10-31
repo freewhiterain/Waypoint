@@ -95,3 +95,9 @@ def test_travelling_with_older_parents_means_a_relaxed_pace_even_when_summarised
         assert day_capacities(requirement) == [1, 1, 1], styles
     assert day_capacities(TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=2,
                                             styles=["历史"])) == [2, 2]
+
+
+def test_other_ways_of_asking_for_a_lighter_day_count():
+    for text in ("第二天别排太满", "第二天别太折腾", "第二天别那么赶"):
+        slots, dropped = apply_slot_update(PLANNED, SlotUpdate(relaxed_days=[2]), user_text=text, today=TODAY)
+        assert slots.relaxed_days == [2], text
