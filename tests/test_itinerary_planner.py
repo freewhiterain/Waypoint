@@ -754,3 +754,19 @@ def test_a_short_hop_is_a_walk_even_when_a_driving_time_is_known():
 
     minutes, mode = costs.leg("上海中心", "东方明珠")
     assert mode == "walk" and minutes <= 20  # 走过去约一刻钟，比开车略慢但更符合实际
+
+
+@pytest.mark.asyncio
+async def test_a_full_day_trip_the_model_puts_on_day_one_moves_to_a_later_day():
+    results = chengdu_results(LEGS)
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options.append(option("兵马俑", "attractions"))
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="兵马俑", preferred_day=1), SelectedPlace(id="武侯祠"), SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    assert any(slot.title == "兵马俑" for slot in itinerary[1].slots)

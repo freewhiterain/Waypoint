@@ -321,7 +321,9 @@ def build_itinerary(
                       key=lambda day: (day == 1 and requirement.days > 1, abs(day - middle)))
         if not free:
             continue
-        day = item.preferred_day if item.preferred_day in free else free[0]
+        # 模型指定第一天也挪开：第一天要赶路，整天的远郊、乐园放第一天总被评审说"一到就跑一小时"
+        wanted = item.preferred_day if item.preferred_day in free and not (item.preferred_day == 1 and len(free) > 1) else None
+        day = wanted or free[0]
         preferred[item.id] = day
         full_day.append(item.id)
         # 那天的容量 = 排进去的远郊/乐园数：市区景点即使真实车程刚好压线，也不会被凑进来
