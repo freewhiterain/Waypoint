@@ -59,6 +59,10 @@ def _rain_chance(text: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# 直线一公里多以内按步行算，步行约 4 公里/小时（城市里绕路，按每公里 15 分钟）。
+WALK_KM, _WALK_MINUTES_PER_KM = 1.2, 15
+
+
 def _minutes_from_km(distance_km: float) -> int:
     """直线距离换算成比较远近用的内部代价：起步 5 分钟，市内每公里约 3.5 分钟。"""
     return round(5 + distance_km * 3.5)
@@ -99,6 +103,23 @@ class TravelCosts:
         if first in self._coordinates and second in self._coordinates:
             return _minutes_from_km(straight_line_km(self._coordinates[first], self._coordinates[second]))
         return None
+
+    def leg(self, first: str | None, second: str | None) -> tuple[int | None, str | None]:
+        """展示给用户的一段路：(分钟数, 方式)。实测按驾车；按坐标估算时一公里多以内算步行。
+
+        原来一律写"车程"，天安门到国博几百米也写"约 6 分钟车程"，评审指出自相矛盾。
+        """
+        if first is None or second is None or first == second:
+            return None, None
+        key = frozenset((first, second))
+        if key in self._minutes:
+            return self._minutes[key], "drive"
+        if first in self._coordinates and second in self._coordinates:
+            km = straight_line_km(self._coordinates[first], self._coordinates[second])
+            if km <= WALK_KM:
+                return round(2 + km * _WALK_MINUTES_PER_KM), "walk"
+            return _minutes_from_km(km), "drive"
+        return None, None
 
     def cost(self, first: str | None, second: str | None) -> int:
         if first is None or second is None or first == second:

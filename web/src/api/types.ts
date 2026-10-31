@@ -30,6 +30,7 @@ export interface TimeSlot {
   description: string;
   location?: string | null;
   travel_minutes?: number | null;
+  travel_mode?: "walk" | "drive" | null;
   opening_window?: string | null;
   estimated_cost?: number | null;
 }

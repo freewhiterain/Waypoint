@@ -677,3 +677,16 @@ def test_an_empty_day_gets_an_unused_full_day_option_cheapest_first():
 
     assert fill_empty_days([["豫园", "外滩"], []], parks) == [["豫园", "外滩"], ["天文馆"]]
     assert fill_empty_days([["豫园"], ["外滩"]], parks) == [["豫园"], ["外滩"]]
+
+
+def test_short_hops_are_walks_and_longer_ones_are_drives():
+    def at(name, lat, lng):
+        return option(name, "attractions", latitude=lat, longitude=lng)
+
+    costs = TravelCosts([result("attractions", [at("天安门", 39.9087, 116.3975), at("国博", 39.9050, 116.4010),
+                                                at("颐和园", 39.9999, 116.2755)])])
+
+    minutes, mode = costs.leg("天安门", "国博")
+    assert mode == "walk" and minutes <= 12
+    assert costs.leg("天安门", "颐和园")[1] == "drive"
+    assert costs.leg("天安门", "不存在") == (None, None)

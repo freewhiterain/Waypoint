@@ -125,7 +125,7 @@ def trim_to_budget(
             ]
             if cheaper:
                 best = min(cheaper, key=lambda option: (option.estimated_cost, costs.cost(previous, option.id)))
-                days[day_index].slots[slot_index] = _slot(slot.period, best, costs.known(previous, best.id))
+                days[day_index].slots[slot_index] = _slot(slot.period, best, *costs.leg(previous, best.id))
 
     def meal_fits(option: CandidateOption, period: str) -> bool:
         return _open_during(option, _LUNCH_WINDOW if period == "lunch" else _DINNER_WINDOW)

@@ -144,6 +144,8 @@ class TimeSlot(BaseModel):
     description: str = ""
     location: str | None = None
     travel_minutes: int | None = Field(default=None, ge=0)
+    # 这段路怎么走：walk 步行、drive 打车或自驾；没有耗时数据时为空
+    travel_mode: Literal["walk", "drive"] | None = None
     opening_window: str | None = None
     estimated_cost: float | None = Field(default=None, ge=0)
     evidence_indexes: list[int] = Field(default_factory=list)

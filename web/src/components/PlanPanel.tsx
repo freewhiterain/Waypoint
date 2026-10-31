@@ -7,6 +7,7 @@ import {
   Copy,
   Database,
   Feather,
+  Footprints,
   ListOrdered,
   Map as MapIcon,
   RefreshCw,
@@ -41,7 +42,8 @@ function Slot({ slot, first, onReplace }: { slot: TimeSlot; first: boolean; onRe
       <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-ink-300 ring-2 ring-ink-100 dark:border-ink-900 dark:ring-ink-800" />
       {slot.travel_minutes != null && (
         <p className="mb-1.5 flex items-center gap-1 text-xs text-ink-400">
-          <Car className="h-3.5 w-3.5" /> {first ? "从住处出发" : "路上"}约 {slot.travel_minutes} 分钟
+          {slot.travel_mode === "walk" ? <Footprints className="h-3.5 w-3.5" /> : <Car className="h-3.5 w-3.5" />}{" "}
+          {first ? "从住处出发" : slot.travel_mode === "walk" ? "步行" : "路上"}约 {slot.travel_minutes} 分钟
         </p>
       )}
       <div className="flex items-start gap-2">
