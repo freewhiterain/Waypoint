@@ -690,3 +690,23 @@ def test_short_hops_are_walks_and_longer_ones_are_drives():
     assert mode == "walk" and minutes <= 12
     assert costs.leg("天安门", "颐和园")[1] == "drive"
     assert costs.leg("天安门", "不存在") == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_two_famous_outskirts_sights_next_to_each_other_share_a_day():
+    results = chengdu_results(LEGS + [leg("兵马俑", "华清宫", 15)])
+    attractions = next(item for item in results if item.worker == "attractions")
+    attractions.options += [option("秦始皇帝陵博物院(兵马俑)", "attractions").model_copy(update={"id": "兵马俑"}),
+                            option("华清宫", "attractions")]
+    llm = FakeLLM([PlaceSelection(
+        hotel_id="武侯酒店",
+        attractions=[SelectedPlace(id="兵马俑"), SelectedPlace(id="武侯祠"), SelectedPlace(id="华清宫"),
+                     SelectedPlace(id="锦里")],
+        dinners=[SelectedPlace(id="火锅"), SelectedPlace(id="小吃")],
+    )])
+
+    itinerary, _ = await plan_itinerary(requirement(days=2), results, llm=llm)
+
+    excursion = next(day for day in itinerary if any("兵马俑" in slot.title for slot in day.slots))
+    sights = {slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")}
+    assert sights == {"秦始皇帝陵博物院(兵马俑)", "华清宫"}
