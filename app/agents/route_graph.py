@@ -207,6 +207,7 @@ class AmapRouteProvider:
     name = "amap"
     attempts = 3
     retry_delay_seconds = 1.0
+    concurrency = 3
 
     def __init__(
         self,
@@ -293,24 +294,30 @@ class AmapRouteProvider:
 
         legs: list[TravelLeg] = []
         now = datetime.now(timezone.utc)
-        for target_id, origins in by_target.items():
+        # 一次规划要测十几个终点。原来逐个串行，交通子 Agent 一跑 20 秒；个人 Key 每秒只允许几次，
+        # 同时最多发 concurrency 个，被限流的等一下再试。
+        gate = asyncio.Semaphore(self.concurrency)
+
+        async def measure(target_id: str, origins: list[Place]) -> tuple[Place, list[Place], dict | None]:
             target = targets[target_id]
             params = {
                 "origins": "|".join(_lnglat(coordinates[origin.id]) for origin in origins),
                 "destination": _lnglat(coordinates[target_id]),
                 "type": 1,
             }
-            data = None
-            # 一次规划会连发十几个请求，个人 Key 每秒只允许几次，被限流时等一下再试。
             for attempt in range(self.attempts):
                 try:
-                    data = await self._request(AMAP_DISTANCE_URL, params)
-                    break
+                    async with gate:
+                        return target, origins, await self._request(AMAP_DISTANCE_URL, params)
                 except Exception as exc:
                     if attempt + 1 == self.attempts:
                         app_logger.warning(f"高德距离测量失败 → {target.name}: {type(exc).__name__}: {exc}")
                     else:
                         await asyncio.sleep(self.retry_delay_seconds)
+            return target, origins, None
+
+        measured = await asyncio.gather(*(measure(target_id, origins) for target_id, origins in by_target.items()))
+        for target, origins, data in measured:
             if data is None:
                 continue
             for row in data.get("results") or []:
