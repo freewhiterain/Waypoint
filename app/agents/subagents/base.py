@@ -659,6 +659,7 @@ class DomainSubagent:
             "days": requirement.days,
             "category": self.worker,
             "must_visit": list(requirement.must_visit),
+            "styles": list(requirement.styles),
             "forecast": self.worker == "weather",
         }
 

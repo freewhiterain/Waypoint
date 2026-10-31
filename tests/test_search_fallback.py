@@ -206,3 +206,13 @@ async def test_search_still_works_when_redis_is_down():
     results = await adapter.search("西安 景点")
 
     assert [item.content for item in results] == ["searxng:西安 景点"]
+
+
+def test_attraction_search_adds_one_query_for_the_users_interest():
+    from app.agents.subagents.tools import web_search_queries
+
+    payload = {"query": "x", "destination": "西安", "category": "attractions", "styles": ["历史", "美食"]}
+
+    assert web_search_queries(payload)[-1] == "西安 历史 景点"
+    assert "西安 美食 景点" not in web_search_queries({**payload, "styles": ["美食"]})
+    assert "西安 历史 景点" not in web_search_queries({**payload, "category": "food"})

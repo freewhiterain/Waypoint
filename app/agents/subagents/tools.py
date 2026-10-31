@@ -203,6 +203,8 @@ _WEB_QUERY_HINTS = {
 
 
 _MAX_NAMED_QUERIES = 3
+# 这些兴趣说的是吃、节奏或同行人，不拿来搜景点
+_NOT_SIGHT_STYLES = ("吃", "美食", "火锅", "轻松", "慢", "赶", "累", "父母", "爸妈", "孩子", "老人", "预算")
 
 
 def web_search_queries(payload: Mapping[str, Any]) -> list[str]:
@@ -216,7 +218,12 @@ def web_search_queries(payload: Mapping[str, Any]) -> list[str]:
     if "limit" in payload or not destination or hints is None:
         return [str(payload["query"])]
     named = [f"{destination} {place}" for place in payload.get("must_visit") or []][:_MAX_NAMED_QUERIES]
-    return [f"{destination} {hint}" for hint in hints] + (named if category in ("attractions", "food") else [])
+    # 用户说了兴趣（喜欢历史、博物馆），景点再按兴趣搜一次：泛搜"必去景点"搜不全，
+    # 西安"喜欢历史"的行程里就漏了陕西历史博物馆、碑林
+    interest = [f"{destination} {style} 景点" for style in (payload.get("styles") or [])
+                if len(style) <= 6 and not any(word in style for word in _NOT_SIGHT_STYLES)][:1]
+    extra = named + interest if category == "attractions" else named if category == "food" else []
+    return [f"{destination} {hint}" for hint in hints] + extra
 
 
 async def search_for_planning(adapter: Any, payload: Mapping[str, Any]) -> list[Evidence]:
