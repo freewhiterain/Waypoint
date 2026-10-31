@@ -420,11 +420,12 @@ def build_itinerary(
 
         # 选中的晚餐用完了就从其余餐饮候选里就近补，不再让同一家餐厅连吃几晚。
         # 选中的那家离当天最后一站太远时，附近有备选就换成备选：玩完再跑一个多小时去吃饭不合理。
-        dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs) or _pick_dinner(
-            backup_dinners, used_dinners, previous, costs
+        hotel = selection.hotel_id
+        dinner_id = _pick_dinner(dinner_pool, used_dinners, previous, costs, hotel) or _pick_dinner(
+            backup_dinners, used_dinners, previous, costs, hotel
         )
         if dinner_id is not None and previous is not None and costs.cost(previous, dinner_id) > MAX_DINNER_MINUTES:
-            nearby = _pick_dinner(backup_dinners, used_dinners, previous, costs)
+            nearby = _pick_dinner(backup_dinners, used_dinners, previous, costs, hotel)
             if nearby is not None and costs.cost(previous, nearby) <= MAX_DINNER_MINUTES:
                 dinner_id = nearby
         if dinner_id is not None:
@@ -554,13 +555,23 @@ def _assign_periods(places: list[CandidateOption]) -> dict[str, CandidateOption]
     return {}
 
 
-def _pick_dinner(pool: list[str], used: set[str], previous: str | None, costs: TravelCosts) -> str | None:
+def _pick_dinner(
+    pool: list[str], used: set[str], previous: str | None, costs: TravelCosts, hotel: str | None = None
+) -> str | None:
+    """晚饭按"最后一站 → 饭店 → 回住处"整段路程最短挑：吃完还要回去，顺路的店更合适。
+
+    原来只看离最后一站多近，评审多次指出"晚上又折回市中心吃饭，再回住处"。
+    """
     if not pool:
         return None
     candidates = [dinner for dinner in pool if dinner not in used]
     if not candidates:
         return None
-    return min(candidates, key=lambda dinner: (costs.cost(previous, dinner), candidates.index(dinner)))
+
+    def detour(dinner: str) -> int:
+        return costs.cost(previous, dinner) + (costs.cost(dinner, hotel) if hotel else 0)
+
+    return min(candidates, key=lambda dinner: (detour(dinner), candidates.index(dinner)))
 
 
 def _slot(

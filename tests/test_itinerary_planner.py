@@ -729,3 +729,15 @@ async def test_outskirts_in_the_same_area_share_a_day_without_coordinates():
 
     excursion = next(day for day in itinerary if any(slot.title == "兵马俑" for slot in day.slots))
     assert {slot.title for slot in excursion.slots if slot.period in ("morning", "afternoon")} == {"兵马俑", "华清池"}
+
+
+def test_dinner_on_the_way_back_to_the_hotel_beats_one_just_behind_the_last_stop():
+    from app.agents.itinerary.scheduling import _pick_dinner
+
+    costs = TravelCosts(chengdu_results([
+        leg("锦里", "背道店", 5), leg("背道店", "武侯酒店", 40),
+        leg("锦里", "顺路店", 12), leg("顺路店", "武侯酒店", 6),
+    ]))
+
+    assert _pick_dinner(["背道店", "顺路店"], set(), "锦里", costs, "武侯酒店") == "顺路店"
+    assert _pick_dinner(["背道店", "顺路店"], set(), "锦里", costs) == "背道店"
