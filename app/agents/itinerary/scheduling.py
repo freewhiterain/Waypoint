@@ -220,7 +220,8 @@ def fill_empty_days(day_plans: list[list[str]], whole_day: list[CandidateOption]
     spare = sorted((option for option in whole_day if option.id not in used),
                    key=lambda option: option.estimated_cost if option.estimated_cost is not None else float("inf"))
     plans = [list(plan) for plan in day_plans]
-    for plan in plans:
+    # 第一天要赶路，后面的空天先补，第一天最后才轮到
+    for plan in plans[1:] + plans[:1]:
         if not plan and spare:
             plan.append(spare.pop(0).id)
     return plans

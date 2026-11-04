@@ -234,3 +234,14 @@ def test_unrequested_theme_park_yields_its_day_to_must_visit_sights():
 
     titles = [slot.title for day in itinerary for slot in day.slots]
     assert all(name in titles for name in must), titles
+
+
+def test_spare_excursion_fills_a_later_empty_day_before_day_one():
+    from app.agents.itinerary.scheduling import fill_empty_days
+
+    spare = [place("远郊", "attractions", 60.0)]
+
+    assert fill_empty_days([[], ["博物馆"], []], spare) == [[], ["博物馆"], ["远郊"]]
+    # 只有第一天空着时照样补
+    assert fill_empty_days([[], ["博物馆"]], spare) == [["远郊"], ["博物馆"]]
+    assert fill_empty_days([[]], spare) == [["远郊"]]
