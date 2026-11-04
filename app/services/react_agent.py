@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from pathlib import Path
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -26,6 +25,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from app.schemas.slots import TripSlots
+from app.services.open_qa import source_name
 from app.schemas.tools import AgentToolArguments, AgentToolCall
 from app.utils.logger import app_logger
 
@@ -119,7 +119,7 @@ async def _search_travel_knowledge(query: str, destination: str | None = None, c
         evidence = [item for item in evidence if _mentions_city(item, destination)]
     if not evidence:
         return ToolOutcome(text="本地资料里没有查到相关内容。", status="empty")
-    lines = [f"[{index + 1}] {item.content}（来源：{Path(item.source).name if item.source else ""}）" for index, item in enumerate(evidence[:_MAX_EVIDENCE_ITEMS])]
+    lines = [f"[{index + 1}] {item.content}（来源：{source_name(item.source)}）" for index, item in enumerate(evidence[:_MAX_EVIDENCE_ITEMS])]
     return ToolOutcome(text="\n".join(lines), evidence_count=len(evidence))
 
 

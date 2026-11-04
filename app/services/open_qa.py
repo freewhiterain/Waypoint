@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import re
 
 from app.rag.local_knowledge import get_local_knowledge_service
 from app.config import settings
@@ -11,9 +11,9 @@ from app.utils.logger import app_logger
 from app.services.requirements import KNOWN_DESTINATIONS
 
 
-def _source_name(source: str) -> str:
-    """只给文件名，不把本机绝对路径展示给用户。"""
-    return Path(source).name if source else ""
+def source_name(source: str) -> str:
+    """只给文件名，不把本机绝对路径展示给用户（Windows 路径在 Linux 上也要能切开）。"""
+    return re.split(r"[\\/]", source)[-1] if source else ""
 
 
 def _about(item, cities: list[str]) -> bool:
@@ -22,7 +22,7 @@ def _about(item, cities: list[str]) -> bool:
 
 
 def _line(item) -> str:
-    return f"{item.content}（来源：{_source_name(item.source)}）"
+    return f"{item.content}（来源：{source_name(item.source)}）"
 
 
 async def answer_open_question(query: str) -> str:

@@ -98,3 +98,11 @@ async def test_open_question_says_when_the_city_has_no_local_material(monkeypatc
     answer = await open_qa.answer_open_question("杭州有什么特色菜推荐")
 
     assert "没有杭州" in answer and "肉夹馍" not in answer
+
+
+def test_source_name_strips_windows_and_posix_directories():
+    from app.services.open_qa import source_name
+
+    assert source_name(r"D:\data\destinations\xian.md") == "xian.md"
+    assert source_name("/srv/data/xian.md") == "xian.md"
+    assert source_name("攻略") == "攻略"
