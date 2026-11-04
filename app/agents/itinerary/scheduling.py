@@ -289,6 +289,8 @@ def build_itinerary(
     options = {option.id: option for worker in ("attractions", "food") for option in _options(results, worker)}
     preferred = {item.id: item.preferred_day for item in selection.attractions if item.preferred_day}
     capacities = day_capacities(requirement)
+    # 用户要求的容量（轻松的天只排 1 个），下面给远郊/乐园改 capacities 时以它为准
+    requested = list(capacities)
     remote = outskirts(results)
 
     def whole(option: CandidateOption) -> bool:
@@ -308,7 +310,8 @@ def build_itinerary(
             near = next((day for other, day in excursion_days.items()
                          if costs.cost(other, item.id) <= MAX_HOP_MINUTES
                          or (area is not None and outskirts_area(options[other].name) == area)), None)
-            if near is not None:
+            # 那天要求轻松时不并进去：轻松的天只排一个景点，远郊挨着也一样，另找一天
+            if near is not None and requested[near - 1] >= ATTRACTIONS_PER_DAY:
                 if capacities[near - 1] >= ATTRACTIONS_PER_DAY:
                     continue
                 preferred[item.id] = near

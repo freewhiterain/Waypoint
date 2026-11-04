@@ -44,3 +44,24 @@ def test_dinner_swapped_after_a_free_slot_keeps_its_leg_from_the_hotel():
     assert [slot.title for slot in dinners] == ["川菜馆A", "小吃店"]
     assert (dinners[1].travel_minutes, dinners[1].travel_mode) == costs.leg("酒店", "小吃店")
     assert dinners[1].travel_minutes is not None
+
+
+def test_neighbouring_excursions_are_not_doubled_up_on_a_relaxed_day():
+    """挨着的两处远郊平时可以同一天；整趟要求轻松时每天只排一个，各占一天。"""
+    results = [
+        result("attractions", [place("远郊甲", "attractions", 60.0), place("远郊乙", "attractions", 60.5),
+                               place("市区景点", "attractions", 1.0)]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+
+    relaxed, _ = schedule_by_rules(requirement(days=3, styles=["轻松"]), results)
+    normal, _ = schedule_by_rules(requirement(days=3), results)
+
+    def sights(itinerary):
+        return [[slot.title for slot in day.slots if slot.period in ("morning", "afternoon")
+                 and not slot.title.startswith("自由")] for day in itinerary]
+
+    assert all(len(day) <= 1 for day in sights(relaxed)), sights(relaxed)
+    assert {"远郊甲", "远郊乙"} <= {title for day in sights(relaxed) for title in day}
+    assert {"远郊甲", "远郊乙"} in [set(day) for day in sights(normal)]
