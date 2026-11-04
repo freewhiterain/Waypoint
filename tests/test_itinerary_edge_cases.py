@@ -180,3 +180,21 @@ def test_must_visit_is_not_crowded_out_when_a_theme_park_takes_a_day():
 
     titles = [slot.title for day in itinerary for slot in day.slots]
     assert "必去寺" in titles and "欢乐谷" in titles
+
+
+def test_budget_trim_does_not_swap_in_a_free_theme_park_next_to_a_sight():
+    results = [
+        result("attractions", [place("免费公园", "attractions", 1.0, cost=0), place("贵景点", "attractions", 1.2, cost=120),
+                               place("欢乐谷", "attractions", 4.0, cost=0), place("博物馆", "attractions", 1.5, cost=10)]),
+        result("food", []),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+    costs = TravelCosts(results)
+    wanted = requirement(days=1, budget=50)
+    itinerary, _ = schedule_by_rules(wanted, results, costs)
+    assert "贵景点" in [slot.title for slot in itinerary[0].slots]
+
+    trimmed = trim_to_budget(wanted, results, itinerary, results[2].options[0], costs)
+
+    titles = [slot.title for slot in trimmed[0].slots]
+    assert "欢乐谷" not in titles and "博物馆" in titles and "贵景点" not in titles

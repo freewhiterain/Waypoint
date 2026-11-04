@@ -9,6 +9,8 @@ from app.agents.itinerary.rules import (
     _candidates,
     _DINNER_WINDOW,
     _fits,
+    is_excursion,
+    is_full_day,
     _LUNCH_WINDOW,
     MAX_DAILY_TRAVEL_MINUTES,
     MAX_DINNER_MINUTES,
@@ -16,6 +18,7 @@ from app.agents.itinerary.rules import (
     _open_during,
     _opening_minutes,
     _options,
+    outskirts,
     PlaceSelection,
     same_place,
     SIGHT_PERIOD_WINDOWS,
@@ -86,8 +89,14 @@ def trim_to_budget(
     """模型压不进预算时的兜底：先换饭，再换门票，从最贵的开始，直到不超预算。
 
     饭换成离上一站 45 分钟内、饭点营业、没吃过（含同连锁）的更便宜餐厅；
-    景点换成离上一站不远、该时段开放、没去过的更便宜景点。用户点名要去的不换。
+    景点换成离上一站不远、该时段开放、没去过的更便宜景点。用户点名要去的不换；
+    占一整天的乐园、远郊既不换出去也不换进来，否则市区景点旁边会冒出一个免费乐园。
     """
+    remote = outskirts(results)
+
+    def ordinary(option: CandidateOption) -> bool:
+        return not (is_full_day(option) or is_excursion(option, remote))
+
     hotel_cost = hotel.estimated_cost if hotel else None
     by_name = {option.name: option for worker in ("attractions", "food") for option in _options(results, worker)}
     days = [day.model_copy(deep=True) for day in itinerary]
@@ -113,6 +122,8 @@ def trim_to_budget(
             if within_budget():
                 return
             slot = days[day_index].slots[slot_index]
+            if worker == "attractions" and slot.title in by_name and not ordinary(by_name[slot.title]):
+                continue
             previous = previous_of(day_index, slot_index)
             used = [other.title for day in days for other in day.slots if other.period in periods]
             cheaper = [
@@ -131,7 +142,8 @@ def trim_to_budget(
         return _open_during(option, _LUNCH_WINDOW if period == "lunch" else _DINNER_WINDOW)
 
     swap(("lunch", "evening"), "food", meal_fits, MAX_DINNER_MINUTES)
-    swap(("morning", "afternoon"), "attractions", lambda option, period: _fits(option, period), MAX_HOP_MINUTES)
+    swap(("morning", "afternoon"), "attractions", lambda option, period: ordinary(option) and _fits(option, period),
+         MAX_HOP_MINUTES)
     return days
 
 
