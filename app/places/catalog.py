@@ -33,7 +33,8 @@ _FILES: dict[PlaceCategory, str] = {
 }
 
 # 候选交给排日程的模型挑选，数量随天数增加，但要控制在提示词放得下的范围。
-MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 8, 40, 8
+# 每天 4 个：每天排 2 个，夜景、远郊、和已选重名的会被筛掉，原先每天 3 个时第三天下午常常没得补。
+SHORTLIST_PER_DAY, MIN_SHORTLIST, MAX_SHORTLIST, HOTEL_SHORTLIST = 4, 10, 40, 8
 # 酒店先取热门的前这么多家，再按离景点中心远近挑 HOTEL_SHORTLIST 家。
 HOTEL_POOL = 30
 # 不适合当正餐的类型。
@@ -235,7 +236,7 @@ class PlaceCatalog:
             return []
         if category == "hotel":
             return self._central_hotels(requirement, _affordable_hotels(records, requirement))
-        limit = min(max(requirement.days * 3, MIN_SHORTLIST), MAX_SHORTLIST)
+        limit = min(max(requirement.days * SHORTLIST_PER_DAY, MIN_SHORTLIST), MAX_SHORTLIST)
         extra: list[PlaceRecord] = []
         if category == "food":
             price_cap = None if _wants_upscale(requirement) else _price_cap(records)

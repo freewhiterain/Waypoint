@@ -85,9 +85,9 @@ def test_record_text_and_attributes_carry_the_structured_facts(catalog):
 def test_preference_matches_take_at_most_two_thirds_of_the_shortlist(catalog):
     names = [record.name for record in catalog.shortlist(requirement(styles=["历史"]), "attractions")]
 
-    # 8 个名额：命中"历史古迹"的最多 5 个排在前面，其余按热门程度补，留几个经典地标。
-    assert names[:5] == ["武侯祠", "冷门古迹甲", "冷门古迹乙", "冷门古迹丙", "冷门古迹丁"]
-    assert names[5:] == ["熊猫基地", "都江堰", "人民公园"]
+    # 10 个名额：命中"历史古迹"的最多 6 个排在前面，其余按热门程度补，留几个经典地标。
+    assert names[:6] == ["武侯祠", "冷门古迹甲", "冷门古迹乙", "冷门古迹丙", "冷门古迹丁", "冷门古迹戊"]
+    assert names[6:] == ["熊猫基地", "都江堰", "人民公园", "春熙路"]
 
 
 def test_dinner_shortlist_drops_teahouses_early_closers_and_spicy_food_when_asked(catalog):
@@ -282,15 +282,15 @@ def test_dinner_shortlist_leaves_out_luxury_restaurants_unless_asked(tmp_path):
 def test_night_spots_do_not_take_daytime_slots_and_are_added_only_for_night_lovers(tmp_path):
     rows = ["city,rank,name,type,latitude,longitude,open_time,close_time,price,min_hours,max_hours"]
     rows += [f"重庆,{i},夜景点{i}夜景,人文景观,29.5,106.5,00:00,24:00,0,1,2" for i in range(3)]
-    rows += [f"重庆,{i + 3},白天景点{i},公园,29.5,106.5,08:00,18:00,0,1,2" for i in range(12)]
+    rows += [f"重庆,{i + 3},白天景点{i},公园,29.5,106.5,08:00,18:00,0,1,2" for i in range(16)]
     (tmp_path / "attractions.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
     catalog = PlaceCatalog(tmp_path)
 
     plain = [record.name for record in catalog.shortlist(requirement(destination="重庆", days=3), "attractions")]
     night = [record.name for record in catalog.shortlist(requirement(destination="重庆", days=3, styles=["夜景"]), "attractions")]
 
-    assert not any("夜景" in name for name in plain) and len(plain) == 9
-    assert sum("夜景" in name for name in night) == 3 and len(night) == 12
+    assert not any("夜景" in name for name in plain) and len(plain) == 12
+    assert sum("夜景" in name for name in night) == 3 and len(night) == 15
 
 
 def test_zero_price_on_a_historic_site_means_unrecorded_not_free():
@@ -304,12 +304,12 @@ def test_zero_price_on_a_historic_site_means_unrecorded_not_free():
 def test_theme_parks_do_not_crowd_ordinary_sights_out_of_the_shortlist(tmp_path):
     rows = ["city,rank,name,type,latitude,longitude,open_time,close_time,price,min_hours,max_hours"]
     rows += [f"上海,{i},乐园{i}迪士尼,游乐园/体育娱乐,31.1,121.6,09:00,21:00,399,4,6" for i in range(4)]
-    rows += [f"上海,{i + 4},景点{i},人文景观,31.2,121.5,08:00,18:00,0,1,2" for i in range(12)]
+    rows += [f"上海,{i + 4},景点{i},人文景观,31.2,121.5,08:00,18:00,0,1,2" for i in range(16)]
     (tmp_path / "attractions.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
     names = [record.name for record in PlaceCatalog(tmp_path).shortlist(requirement(destination="上海", days=3), "attractions")]
 
-    assert sum(name.startswith("景点") for name in names) == 9  # 普通景点名额不被乐园占
+    assert sum(name.startswith("景点") for name in names) == 12  # 普通景点名额不被乐园占
     assert sum("迪士尼" in name for name in names) == 2
 
 
