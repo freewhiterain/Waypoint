@@ -20,7 +20,9 @@ from app.services.requirements import KNOWN_DESTINATIONS, RequirementExtractor
 
 
 _AFFIRMATIONS = {"好的", "好啊", "好呀", "可以", "开始吧", "行", "行啊", "好的开始吧"}
-_PLANNING_MARKERS = ("规划", "安排行程", "制定行程", "做个行程", "做攻略", "旅行计划")
+_PLANNING_MARKERS = ("规划", "安排行程", "制定行程", "做个行程", "做攻略", "做个攻略", "出个攻略", "旅行计划")
+# 规则兜底时，"去上海玩两天"这类说了城市和天数/日期的也当作要规划
+_TRIP_VERBS = ("玩", "去", "旅游", "旅行", "逛")
 _OPEN_QUESTION_MARKERS = (
     "最近",
     "什么好玩",
@@ -79,7 +81,7 @@ class MainAgentService:
         normalized = self._normalize(text)
         slot_update = await self._slot_update_by_rules(text)
 
-        if self._is_explicit_planning_request(normalized):
+        if self._is_explicit_planning_request(normalized) or self._states_a_trip(normalized, slot_update):
             return MainAgentDecision(
                 action="collect_trip_requirements",
                 reason="用户明确请求规划",
@@ -208,6 +210,15 @@ class MainAgentService:
                 ),
             ),
         )
+
+    @staticmethod
+    def _states_a_trip(text: str, update: SlotUpdate) -> bool:
+        """说了去哪、玩几天或哪天出发，又不是在问问题——模型出错走规则时不能当成开放问答。"""
+        if not update.destination or not (update.days or update.departure_date):
+            return False
+        if any(mark in text for mark in ("吗", "？", "?", "怎么样", "多少", "值得")):
+            return False
+        return any(verb in text for verb in _TRIP_VERBS)
 
     @staticmethod
     def _is_explicit_planning_request(text: str) -> bool:

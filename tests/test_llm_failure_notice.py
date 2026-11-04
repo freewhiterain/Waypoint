@@ -61,3 +61,40 @@ def test_plan_notice_names_the_reason_the_model_was_skipped():
 
     assert notices == ["智能选点暂时不可用（模型服务余额不足，暂时无法调用），本次按固定规则选点。"]
     assert user_facing_warnings(["itinerary_selection_fallback:llm_failed"]) == ["智能选点暂时不可用，本次按固定规则选点。"]
+
+
+@pytest.mark.asyncio
+async def test_open_question_drops_other_cities_and_local_paths(monkeypatch):
+    from app.schemas.planning import Evidence
+    from app.services import open_qa
+
+    class Knowledge:
+        def search(self, _query):
+            return [
+                Evidence(content="肉夹馍推荐赵记", source=r"D:\data\destinations\xian.md", source_url="https://a.test"),
+                Evidence(content="杭州名菜西湖醋鱼", source=r"D:\data\destinations\hangzhou.md", source_url="https://a.test"),
+            ]
+
+    monkeypatch.setattr(open_qa.settings, "llm_api_key", "")
+    monkeypatch.setattr(open_qa, "get_local_knowledge_service", lambda: Knowledge())
+
+    answer = await open_qa.answer_open_question("杭州有什么特色菜推荐")
+
+    assert "西湖醋鱼" in answer and "肉夹馍" not in answer
+    assert "D:" not in answer and "hangzhou.md" in answer
+
+
+@pytest.mark.asyncio
+async def test_open_question_says_when_the_city_has_no_local_material(monkeypatch):
+    from app.schemas.planning import Evidence
+    from app.services import open_qa
+
+    class Knowledge:
+        def search(self, _query):
+            return [Evidence(content="肉夹馍推荐赵记", source="xian.md", source_url="https://a.test")]
+
+    monkeypatch.setattr(open_qa, "get_local_knowledge_service", lambda: Knowledge())
+
+    answer = await open_qa.answer_open_question("杭州有什么特色菜推荐")
+
+    assert "没有杭州" in answer and "肉夹馍" not in answer

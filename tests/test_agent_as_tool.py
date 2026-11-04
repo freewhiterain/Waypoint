@@ -383,3 +383,22 @@ async def test_agent_tool_action_without_a_tool_call_falls_back_to_direct_respon
     events = await collect_stream_events()
 
     assert [event["type"] for event in events] == ["token", "done"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    ["2026-11-09去上海玩两天，喜欢博物馆和美术馆，帮我做个攻略", "下周六去杭州玩3天"],
+)
+async def test_rules_fallback_treats_stated_trips_as_planning(message):
+    # 模型路由出错时走规则：说了城市+天数/日期的出行，要进规划，不能当成开放问答
+    decision = await MainAgentService(use_llm=False).decide(message, [])
+
+    assert decision.action == "collect_trip_requirements"
+
+
+@pytest.mark.asyncio
+async def test_rules_fallback_keeps_questions_about_a_trip_as_questions():
+    decision = await MainAgentService(use_llm=False).decide("上海玩两天值得去吗？", [])
+
+    assert decision.action != "collect_trip_requirements"
