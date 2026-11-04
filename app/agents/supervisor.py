@@ -220,7 +220,7 @@ async def synthesize_itinerary_with_llm(
             "travel_minutes 是交通耗时（有路线数据时是实测，没有时按两地直线距离估算）："
             "第一个时段是从住处出发，其余时段是从前一个时段的地点过来，"
             "travel_mode=walk 写成“步行约 X 分钟”，drive 写成“约 X 分钟车程”；"
-            "为空的不要自己估算，也不要提交通。"
+            "为空的不要自己估算，也不要提交通；也不要写饭后回酒店之类模板里没有的路程。"
         )
 
         async def write_day(day: ItineraryDay) -> ItineraryDay:
@@ -279,12 +279,31 @@ def _merge_day(written: _DayText, template: ItineraryDay) -> ItineraryDay:
 _STATED_PRICE = re.compile(r"((?:门票|人均)(?:约)?\s*)(\d+(?:\.\d+)?)(\s*元)")
 _STATED_WINDOW = re.compile(r"\d{1,2}:\d{2}\s*[-–~至]\s*\d{1,2}:\d{2}")
 _ASIDE = re.compile(r"（[^）]*）|\([^)]*\)")
+# 路上耗时的说法："步行约 8 分钟""约 20 分钟车程""打车约 15 分钟"，以及写混了的"步行约 34 分钟车程"
+_STATED_TRAVEL = re.compile(
+    r"(?:步行|走路)\s*约?\s*\d+\s*分钟(?:车程)?|(?:车程|开车|打车|驾车)\s*约?\s*\d+\s*分钟|约?\s*\d+\s*分钟\s*车程"
+)
 
 
 def align_stated_facts(description: str, slot: TimeSlot) -> str:
-    """模型改写描述时偶尔把人均 70 写成 74：把正文里的价格和营业时间改回字段里的数。"""
+    """模型改写描述时偶尔把人均 70 写成 74：把正文里的价格、营业时间和路上耗时改回字段里的数。
+
+    路上耗时只改第一处（这一段路）；"步行约 34 分钟车程"这种步行、车程写混的也按 travel_mode 改对。
+    """
+    travel = None
+    if slot.travel_minutes is not None and slot.travel_mode:
+        travel = (f"步行约 {slot.travel_minutes} 分钟" if slot.travel_mode == "walk"
+                  else f"约 {slot.travel_minutes} 分钟车程")
+    pending = [travel]
+
+    def fix_travel(match: re.Match) -> str:
+        if pending and pending[0]:
+            return pending.pop()
+        return match.group(0)
 
     def fix(segment: str) -> str:
+        if travel:
+            segment = _STATED_TRAVEL.sub(fix_travel, segment)
         if slot.estimated_cost is not None:
             segment = _STATED_PRICE.sub(lambda m: f"{m.group(1)}{slot.estimated_cost:g}{m.group(3)}", segment)
         if slot.opening_window and _STATED_WINDOW.fullmatch(slot.opening_window):
