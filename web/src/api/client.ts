@@ -131,11 +131,14 @@ export async function streamPost(
         .map((line) => line.slice(5).trimStart())
         .join("\n");
       if (data) {
+        let event: StreamEvent | undefined;
         try {
-          onEvent(JSON.parse(data) as StreamEvent);
+          event = JSON.parse(data) as StreamEvent;
         } catch {
           /* 忽略无法解析的帧 */
         }
+        // 回调里抛出的错误（比如规划流里的 error 事件）要传给调用方，不能当成坏帧吞掉。
+        if (event) onEvent(event);
       }
       boundary = buffer.indexOf("\n\n");
     }
