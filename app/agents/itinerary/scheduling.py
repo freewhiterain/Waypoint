@@ -464,11 +464,28 @@ def build_itinerary(
                 notes=notes,
             )
         )
-    return limit_foreign_dinners(requirement, results, ensure_wanted_food(requirement, results, itinerary, costs), costs)
+    hotel_id = selection.hotel_id
+    itinerary = ensure_wanted_food(requirement, results, itinerary, costs, hotel_id)
+    return limit_foreign_dinners(requirement, results, itinerary, costs, hotel_id)
+
+
+def previous_stop(
+    day: ItineraryDay, slot_index: int, by_name: dict[str, CandidateOption], hotel_id: str | None
+) -> str | None:
+    """这个时段之前真正待过的地方：跳过"自由活动"这类兜底时段，当天还没去过别处就是住处。
+
+    原来直接取上一个时段的标题，上一个是"自由活动"时查不到，换上来的晚饭就没有路程、
+    也不检查远近（排程时 previous 本来就不会停在兜底时段上）。
+    """
+    for slot in reversed(day.slots[:slot_index]):
+        if slot.title in by_name:
+            return by_name[slot.title].id
+    return hotel_id
 
 
 def limit_foreign_dinners(
-    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts
+    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts,
+    hotel_id: str | None = None,
 ) -> list[ItineraryDay]:
     """没点名要吃别的菜系时，非当地菜的晚饭每三天最多一顿（至少允许一顿），多出来的换成附近的当地菜。
 
@@ -494,8 +511,7 @@ def limit_foreign_dinners(
              if is_local_food(city, str(option.attributes.get("type") or "")) and _open_during(option, _DINNER_WINDOW)]
     for day_index, slot_index in dinners[allowed:]:
         eaten = {_base_name(slot.title) for day in days for slot in day.slots if slot.period in ("lunch", "evening")}
-        previous_title = days[day_index].slots[slot_index - 1].title if slot_index else None
-        previous = by_name[previous_title].id if previous_title in by_name else None
+        previous = previous_stop(days[day_index], slot_index, by_name, hotel_id)
         nearby = [option for option in local if _base_name(option.name) not in eaten
                   and (previous is None or costs.cost(previous, option.id) <= MAX_DINNER_MINUTES)]
         if nearby:
@@ -505,7 +521,8 @@ def limit_foreign_dinners(
 
 
 def ensure_wanted_food(
-    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts
+    requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts,
+    hotel_id: str | None = None,
 ) -> list[ItineraryDay]:
     """说了"想吃火锅"，整趟却一顿火锅都没有时，把一顿晚饭换成附近能吃到的。
 
@@ -528,8 +545,7 @@ def ensure_wanted_food(
             for slot_index, slot in enumerate(day.slots):
                 if slot.period != "evening":
                     continue
-                previous_title = day.slots[slot_index - 1].title if slot_index else None
-                previous = by_name[previous_title].id if previous_title in by_name else None
+                previous = previous_stop(day, slot_index, by_name, hotel_id)
                 for option in food:
                     if not _serves(option, dish) or _base_name(option.name) in eaten:
                         continue
@@ -540,8 +556,7 @@ def ensure_wanted_food(
                         best = (day_index, slot_index, minutes, option)
         if best is not None:
             day_index, slot_index, _, option = best
-            previous_title = days[day_index].slots[slot_index - 1].title if slot_index else None
-            previous = by_name[previous_title].id if previous_title in by_name else None
+            previous = previous_stop(days[day_index], slot_index, by_name, hotel_id)
             days[day_index].slots[slot_index] = _slot("evening", option, *costs.leg(previous, option.id))
     return days
 

@@ -22,7 +22,7 @@ from app.agents.itinerary.rules import (
     Violation,
 )
 from app.agents.itinerary.travel import TravelCosts
-from app.agents.itinerary.scheduling import build_itinerary, _slot
+from app.agents.itinerary.scheduling import build_itinerary, previous_stop, _slot
 
 
 def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay]) -> list[Violation]:
@@ -96,8 +96,7 @@ def trim_to_budget(
         return estimate_trip_cost(requirement, days, hotel_cost).total <= (requirement.budget or 0)
 
     def previous_of(day_index: int, slot_index: int) -> str | None:
-        title = days[day_index].slots[slot_index - 1].title if slot_index else None
-        return by_name[title].id if title in by_name else (hotel.id if hotel else None)
+        return previous_stop(days[day_index], slot_index, by_name, hotel.id if hotel else None)
 
     def positions(periods: tuple[str, ...]) -> list[tuple[int, int]]:
         found = [
