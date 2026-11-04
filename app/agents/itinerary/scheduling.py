@@ -428,10 +428,12 @@ def build_itinerary(
     )
     day_plans = fill_empty_days(day_plans, [option for option in _candidates(results, "attractions", requirement)
                                             if whole(option)])
-    day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
+    # fill_empty_days 补进来的乐园、远郊不在 preferred 里，也要钉住：不然对调时会和市区景点换到同一天
     whole_ids = {place_id for plan in day_plans for place_id in plan if whole(options[place_id])}
+    pinned = set(preferred) | whole_ids
+    day_plans = regroup_days(day_plans, pinned, selection.hotel_id, costs)
     day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities, whole_ids)
-    day_plans = split_late_openers(day_plans, options, set(preferred), must_ids)
+    day_plans = split_late_openers(day_plans, options, pinned, must_ids)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)
     ]

@@ -245,3 +245,23 @@ def test_spare_excursion_fills_a_later_empty_day_before_day_one():
     # 只有第一天空着时照样补
     assert fill_empty_days([[], ["博物馆"]], spare) == [["远郊"], ["博物馆"]]
     assert fill_empty_days([[]], spare) == [["远郊"]]
+
+
+def test_theme_park_filled_into_an_empty_day_is_not_swapped_next_to_a_sight():
+    """模型一个景点都没选：补位排满第一天，乐园补进空着的第二天；随后的对调不能把它换到市区景点旁边。"""
+    from app.agents.itinerary.scheduling import build_itinerary
+    from app.agents.itinerary.rules import PlaceSelection
+
+    unlocated = CandidateOption(id="没坐标", name="没坐标", category="attractions", description="", evidence_ids=["e"])
+    results = [
+        result("attractions", [unlocated, place("景点", "attractions", 1.0), place("欢乐谷", "attractions", 5.0)]),
+        result("food", []),
+        result("hotel", []),
+    ]
+
+    itinerary = build_itinerary(requirement(days=2), results, PlaceSelection(), TravelCosts(results))
+
+    for day in itinerary:
+        titles = [slot.title for slot in day.slots if slot.period in ("morning", "afternoon")]
+        if "欢乐谷" in titles:
+            assert titles == ["欢乐谷"], titles
