@@ -205,15 +205,18 @@ def _candidates(results: list[WorkerResult], worker: str, requirement: TravelReq
 def _relaxed_hint(requirement: TravelRequirement) -> str:
     if _wants_relaxed_trip(requirement):
         return "用户希望整趟节奏轻松，每天只排 1 个景点，选路面平缓、不太累的。"
+    if any(word in "".join([*requirement.styles, *requirement.special_needs]) for word in _ELDER_WORDS):
+        return "同行有长辈，优先选路面平缓、不用爬山或久站的景点。"
     days = [day for day in sorted(set(requirement.relaxed_days)) if day <= requirement.days]
     if not days:
         return ""
     return "用户要求" + "、".join(f"第{day}天" for day in days) + "轻松些，这几天只排 1 个景点，选不太累的。"
 
 
-# 用户说"别太累""带老人""慢节奏"但没指定哪天时，模型会把它记成风格标签而不是 relaxed_days。
-# 模型常把"爸妈年纪大了，别太赶"概括成"带父母"，所以同行长辈本身也算要轻松。
-_RELAXED_STYLE_WORDS = ("轻松", "悠闲", "休闲", "慢", "不累", "别太累", "赶", "老人", "腿脚", "年纪大", "长辈", "父母", "爸妈")
+# 用户说"别太累""老人腿脚不好""慢节奏"但没指定哪天时，模型会把它记成风格标签而不是 relaxed_days。
+# 只是"带爸妈""和父母"不算：每天只排一个景点、下午整段空着，评审和用户都嫌太空（选点时另外偏向平缓的地方）。
+_RELAXED_STYLE_WORDS = ("轻松", "悠闲", "休闲", "慢", "不累", "别太累", "赶", "腿脚", "年纪大", "行动不便")
+_ELDER_WORDS = ("老人", "长辈", "父母", "爸妈", "爷爷", "奶奶", "外公", "外婆")
 
 
 def _wants_relaxed_trip(requirement: TravelRequirement) -> bool:

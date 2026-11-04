@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from app.agents.itinerary_planner import PlaceSelection, SelectedPlace, day_capacities, plan_itinerary
+from app.agents.itinerary_planner import PlaceSelection, SelectedPlace, _relaxed_hint, day_capacities, plan_itinerary
 from app.schemas.planning import TravelRequirement
 from app.schemas.slots import SlotUpdate, TripSlots
 from app.services.slots import apply_slot_update
@@ -89,10 +89,15 @@ def test_full_place_name_completed_from_context_still_counts_as_mentioned():
     assert "avoid_places" in dropped
 
 
-def test_travelling_with_older_parents_means_a_relaxed_pace_even_when_summarised():
-    for styles in (["带父母"], ["爸妈年纪大了，别太赶"], ["长辈同行"]):
+def test_older_parents_who_need_it_get_a_relaxed_pace_but_company_alone_does_not():
+    for styles in (["爸妈年纪大了，别太赶"], ["老人腿脚不好"]):
         requirement = TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=3, styles=styles)
         assert day_capacities(requirement) == [1, 1, 1], styles
+    # 只说带爸妈：一天一个景点、下午整段空着太空了，照常排，选点时偏向平缓的地方
+    for styles in (["带父母"], ["长辈同行"]):
+        requirement = TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=3, styles=styles)
+        assert day_capacities(requirement) == [2, 2, 2], styles
+        assert "平缓" in _relaxed_hint(requirement)
     assert day_capacities(TravelRequirement(destination="北京", departure_date=date(2026, 11, 2), days=2,
                                             styles=["历史"])) == [2, 2]
 

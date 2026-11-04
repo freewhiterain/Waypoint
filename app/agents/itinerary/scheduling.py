@@ -420,7 +420,7 @@ def build_itinerary(
                                       description="当天的景点开门较晚，安排在下午；上午可以自由安排。"))
             elif capacities[index] < ATTRACTIONS_PER_DAY:
                 slots.append(TimeSlot(period="afternoon", title="自由活动",
-                                      description="按你的要求这天安排得轻松些，下午留给休息或在周边随意逛逛。"))
+                                      description="这天安排得轻松些，下午留给休息或在周边随意逛逛。"))
             else:
                 slots.append(TimeSlot(period="afternoon", title="自由活动",
                                       description="附近没有能顺路安排的景点，下午留给休息或在周边随意逛逛。"))
