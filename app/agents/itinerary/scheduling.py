@@ -97,6 +97,7 @@ def assign_days(
     hotel_id: str | None,
     costs: TravelCosts,
     capacities: list[int] | None = None,
+    keep: set[str] | frozenset[str] = frozenset(),
 ) -> list[list[str]]:
     """把景点分到每天（每天最多 capacities[i] 个，默认 ATTRACTIONS_PER_DAY），并排好每天内部顺序。
 
@@ -134,6 +135,22 @@ def assign_days(
             key=lambda day_places: costs.cost(day_places[-1] if day_places else hotel_id, place_id),
         )
         target.append(place_id)
+        remaining.remove(place_id)
+
+    # 乐园、远郊占了整天后放不下全部景点，贪心先排近的，剩下的可能正是用户点名要去的（keep）。
+    # 这时换掉一个没点名、没指定日子的，挑换完当天路程最短的那个。
+    for place_id in [place_id for place_id in remaining if place_id in keep]:
+        swaps = [
+            (day_places, index)
+            for day_places in plan
+            for index, other in enumerate(day_places)
+            if other not in keep and other not in preferred
+        ]
+        if not swaps:
+            break
+        day_places, index = min(swaps, key=lambda swap: _day_cost(
+            swap[0][:swap[1]] + [place_id] + swap[0][swap[1] + 1:], hotel_id, costs))
+        day_places[index] = place_id
         remaining.remove(place_id)
 
     return [_best_order(day_places, hotel_id, costs) for day_places in plan]
@@ -391,7 +408,8 @@ def build_itinerary(
     attraction_ids = full_day + [
         item.id for item in selection.attractions if item.id not in full_day and not whole(options[item.id])
     ]
-    day_plans = assign_days(attraction_ids, preferred, requirement.days, selection.hotel_id, costs, capacities)
+    must_ids = {place_id for place_id, option in options.items() if named_by(option.name, requirement.must_visit)}
+    day_plans = assign_days(attraction_ids, preferred, requirement.days, selection.hotel_id, costs, capacities, must_ids)
     day_plans = top_up_days(
         day_plans,
         [option.id for option in _candidates(results, "attractions", requirement) if not whole(option)],
@@ -406,7 +424,6 @@ def build_itinerary(
     day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
     whole_ids = {place_id for plan in day_plans for place_id in plan if whole(options[place_id])}
     day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities, whole_ids)
-    must_ids = {place_id for place_id, option in options.items() if named_by(option.name, requirement.must_visit)}
     day_plans = split_late_openers(day_plans, options, set(preferred), must_ids)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)

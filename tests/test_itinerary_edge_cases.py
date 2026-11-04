@@ -164,3 +164,19 @@ def test_swapping_dinner_for_budget_updates_the_walk_to_the_night_spot():
     dinner, night = trimmed[0].slots[-2:]
     assert (dinner.title, night.title) == ("便宜餐厅", "江边夜景")
     assert (night.travel_minutes, night.travel_mode) == costs.leg("便宜餐厅", "江边夜景")
+
+
+def test_must_visit_is_not_crowded_out_when_a_theme_park_takes_a_day():
+    """乐园占了一天，选中的景点放不下了：贪心先排离酒店近的，没坐标的必去景点原来被挤掉。"""
+    near = [place(f"景点{i}", "attractions", 0.2 * i) for i in range(1, 5)]
+    unlocated = CandidateOption(id="必去寺", name="必去寺", category="attractions", description="", evidence_ids=["e"])
+    results = [
+        result("attractions", [unlocated, *near, place("欢乐谷", "attractions", 8.0)]),
+        result("food", []),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+
+    itinerary, _ = schedule_by_rules(requirement(days=3, must_visit=["必去寺"]), results)
+
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    assert "必去寺" in titles and "欢乐谷" in titles
