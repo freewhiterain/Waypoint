@@ -198,3 +198,23 @@ def test_budget_trim_does_not_swap_in_a_free_theme_park_next_to_a_sight():
 
     titles = [slot.title for slot in trimmed[0].slots]
     assert "欢乐谷" not in titles and "博物馆" in titles and "贵景点" not in titles
+
+
+def test_neighbouring_excursions_that_both_open_late_get_separate_days():
+    late = "13:00-21:00"
+    results = [
+        result("attractions", [place("远郊甲", "attractions", 60.0, opening_hours=late),
+                               place("远郊乙", "attractions", 60.5, opening_hours=late),
+                               place("市区景点", "attractions", 1.0)]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+
+    itinerary, _ = schedule_by_rules(requirement(days=3), results)
+
+    for day in itinerary:
+        for slot in day.slots:
+            if slot.title in ("远郊甲", "远郊乙"):
+                assert slot.period == "afternoon", (day.day, slot.title)
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    assert "远郊甲" in titles and "远郊乙" in titles

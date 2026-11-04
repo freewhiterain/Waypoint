@@ -379,9 +379,11 @@ def build_itinerary(
         taken = {preferred[place_id] for place_id in full_day}
         if not is_full_day(option):
             area = outskirts_area(option.name)
+            # 两处都下午才开门时排不进同一天的上下午，不并
             near = next((day for other, day in excursion_days.items()
-                         if costs.cost(other, item.id) <= MAX_HOP_MINUTES
-                         or (area is not None and outskirts_area(options[other].name) == area)), None)
+                         if (costs.cost(other, item.id) <= MAX_HOP_MINUTES
+                             or (area is not None and outskirts_area(options[other].name) == area))
+                         and _arrangeable([other, item.id], options)), None)
             # 那天要求轻松时不并进去：轻松的天只排一个景点，远郊挨着也一样，另找一天
             if near is not None and requested[near - 1] >= ATTRACTIONS_PER_DAY:
                 if capacities[near - 1] >= ATTRACTIONS_PER_DAY:
