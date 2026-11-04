@@ -265,3 +265,15 @@ def test_theme_park_filled_into_an_empty_day_is_not_swapped_next_to_a_sight():
         titles = [slot.title for slot in day.slots if slot.period in ("morning", "afternoon")]
         if "欢乐谷" in titles:
             assert titles == ["欢乐谷"], titles
+
+
+def test_hotel_falls_back_to_the_first_candidate_when_the_model_picks_nothing():
+    from app.agents.itinerary.rules import PlaceSelection
+    from app.agents.itinerary.selection import closer_hotel
+
+    results = [result("hotel", [place("酒店甲", "hotel"), place("酒店乙", "hotel", 1.0)])]
+    costs = TravelCosts(results)
+
+    assert closer_hotel(PlaceSelection(), results, costs) == "酒店甲"
+    assert closer_hotel(PlaceSelection(hotel_id="酒店乙"), results, costs) == "酒店乙"
+    assert closer_hotel(PlaceSelection(), [], costs) is None

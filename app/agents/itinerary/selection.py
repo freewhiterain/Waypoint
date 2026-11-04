@@ -122,8 +122,11 @@ def closer_hotel(selection: PlaceSelection, results: list[WorkerResult], costs: 
     """
     hotels = _options(results, "hotel")
     sights = [item.id for item in selection.attractions]
-    if not hotels or not sights:
+    if not hotels:
         return selection.hotel_id
+    if not sights:
+        # 没有景点可比远近时照规则选点的做法用第一家：模型也没选酒店时，不能整趟没地方住
+        return selection.hotel_id or hotels[0].id
 
     def mean_cost(hotel_id: str) -> float:
         return sum(costs.cost(hotel_id, sight) for sight in sights) / len(sights)
