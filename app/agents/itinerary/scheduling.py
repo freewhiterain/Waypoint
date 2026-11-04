@@ -372,6 +372,9 @@ def build_itinerary(
     # 先定好日子、那天的容量只留给它们，排在最前面先放。
     full_day: list[str] = []
     excursion_days: dict[str, int] = {}
+    must_ids = {place_id for place_id, option in options.items() if named_by(option.name, requirement.must_visit)}
+    # 用户点名的市区景点要留够位置：没点名的乐园、远郊占掉整天后放不下时，不排它们
+    must_city = sum(1 for item in selection.attractions if item.id in must_ids and not whole(options[item.id]))
     for item in selection.attractions:
         option = options[item.id]
         if not whole(option):
@@ -401,6 +404,8 @@ def build_itinerary(
         # 模型指定第一天也挪开：第一天要赶路，整天的远郊、乐园放第一天总被评审说"一到就跑一小时"
         wanted = item.preferred_day if item.preferred_day in free and not (item.preferred_day == 1 and len(free) > 1) else None
         day = wanted or free[0]
+        if item.id not in must_ids and sum(capacities[other - 1] for other in free if other != day) < must_city:
+            continue
         preferred[item.id] = day
         full_day.append(item.id)
         # 那天的容量 = 排进去的远郊/乐园数：市区景点即使真实车程刚好压线，也不会被凑进来
@@ -410,7 +415,6 @@ def build_itinerary(
     attraction_ids = full_day + [
         item.id for item in selection.attractions if item.id not in full_day and not whole(options[item.id])
     ]
-    must_ids = {place_id for place_id, option in options.items() if named_by(option.name, requirement.must_visit)}
     day_plans = assign_days(attraction_ids, preferred, requirement.days, selection.hotel_id, costs, capacities, must_ids)
     day_plans = top_up_days(
         day_plans,

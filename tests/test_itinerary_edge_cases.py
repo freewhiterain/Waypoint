@@ -218,3 +218,19 @@ def test_neighbouring_excursions_that_both_open_late_get_separate_days():
                 assert slot.period == "afternoon", (day.day, slot.title)
     titles = [slot.title for day in itinerary for slot in day.slots]
     assert "远郊甲" in titles and "远郊乙" in titles
+
+
+def test_unrequested_theme_park_yields_its_day_to_must_visit_sights():
+    """三天、点名三处市区景点：没点名的乐园和远郊各占一天后只剩两个空位，原来第三处被挤掉。"""
+    sights = [place(f"景点{i}", "attractions", 0.5 * i) for i in range(1, 5)]
+    results = [
+        result("attractions", [*sights, place("欢乐谷", "attractions", 5.0), place("远郊", "attractions", 60.0)]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+    must = ["景点2", "景点3", "景点4"]
+
+    itinerary, _ = schedule_by_rules(requirement(days=3, must_visit=must), results)
+
+    titles = [slot.title for day in itinerary for slot in day.slots]
+    assert all(name in titles for name in must), titles
