@@ -22,7 +22,7 @@ from app.agents.itinerary.rules import (
     Violation,
 )
 from app.agents.itinerary.travel import TravelCosts
-from app.agents.itinerary.scheduling import build_itinerary, previous_stop, _slot
+from app.agents.itinerary.scheduling import build_itinerary, previous_stop, replace_slot, _slot
 
 
 def check_itinerary(requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay]) -> list[Violation]:
@@ -124,7 +124,8 @@ def trim_to_budget(
             ]
             if cheaper:
                 best = min(cheaper, key=lambda option: (option.estimated_cost, costs.cost(previous, option.id)))
-                days[day_index].slots[slot_index] = _slot(slot.period, best, *costs.leg(previous, best.id))
+                replace_slot(days[day_index], slot_index, _slot(slot.period, best, *costs.leg(previous, best.id)),
+                             by_name, costs)
 
     def meal_fits(option: CandidateOption, period: str) -> bool:
         return _open_during(option, _LUNCH_WINDOW if period == "lunch" else _DINNER_WINDOW)

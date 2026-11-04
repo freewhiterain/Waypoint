@@ -544,6 +544,19 @@ def previous_stop(
     return hotel_id
 
 
+def replace_slot(
+    day: ItineraryDay, slot_index: int, slot: TimeSlot, by_name: dict[str, CandidateOption], costs: TravelCosts
+) -> None:
+    """换掉一个时段的地点，下一站的路程改成从新地点出发：换了晚饭，饭后去夜景的路程也跟着变。"""
+    day.slots[slot_index] = slot
+    for index in range(slot_index + 1, len(day.slots)):
+        following = day.slots[index]
+        if following.title in by_name and slot.title in by_name:
+            minutes, mode = costs.leg(by_name[slot.title].id, by_name[following.title].id)
+            day.slots[index] = following.model_copy(update={"travel_minutes": minutes, "travel_mode": mode})
+            return
+
+
 def limit_foreign_dinners(
     requirement: TravelRequirement, results: list[WorkerResult], itinerary: list[ItineraryDay], costs: TravelCosts,
     hotel_id: str | None = None,
@@ -577,7 +590,7 @@ def limit_foreign_dinners(
                   and (previous is None or costs.cost(previous, option.id) <= MAX_DINNER_MINUTES)]
         if nearby:
             best = min(nearby, key=lambda option: costs.cost(previous, option.id) if previous else 0)
-            days[day_index].slots[slot_index] = _slot("evening", best, *costs.leg(previous, best.id))
+            replace_slot(days[day_index], slot_index, _slot("evening", best, *costs.leg(previous, best.id)), by_name, costs)
     return days
 
 
@@ -618,7 +631,8 @@ def ensure_wanted_food(
         if best is not None:
             day_index, slot_index, _, option = best
             previous = previous_stop(days[day_index], slot_index, by_name, hotel_id)
-            days[day_index].slots[slot_index] = _slot("evening", option, *costs.leg(previous, option.id))
+            replace_slot(days[day_index], slot_index, _slot("evening", option, *costs.leg(previous, option.id)),
+                         by_name, costs)
     return days
 
 

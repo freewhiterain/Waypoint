@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.agents.itinerary.planner import schedule_by_rules
+from app.agents.itinerary.repair import trim_to_budget
 from app.agents.itinerary.scheduling import dodge_rain
 from app.agents.itinerary.travel import TravelCosts
 from app.schemas.planning import CandidateOption, Evidence, TravelRequirement, WorkerResult
@@ -143,3 +144,23 @@ def test_late_opener_that_cannot_be_swapped_is_dropped_but_must_visit_is_kept():
     assert _sight_slots(plain) == [("afternoon", "艺术馆")]
     assert plain[0].slots[0].title == "自由活动"
     assert _sight_slots(named) == [("afternoon", "剧场")]
+
+
+def test_swapping_dinner_for_budget_updates_the_walk_to_the_night_spot():
+    """预算压不下时把晚饭换成便宜的；饭后去夜景的路程要从新餐厅算，不能还写从原来那家走过去。"""
+    results = [
+        result("attractions", [place("博物馆", "attractions", 0.5), place("江边夜景", "attractions", 1.0)]),
+        result("food", [place("贵餐厅", "food", 1.0, cost=300), place("便宜餐厅", "food", 3.0, cost=20)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+    costs = TravelCosts(results)
+    wanted = requirement(days=1, styles=["夜景"], budget=100)
+    itinerary, _ = schedule_by_rules(wanted, results, costs)
+    hotel = results[2].options[0]
+    assert [slot.title for slot in itinerary[0].slots][-2:] == ["贵餐厅", "江边夜景"]
+
+    trimmed = trim_to_budget(wanted, results, itinerary, hotel, costs)
+
+    dinner, night = trimmed[0].slots[-2:]
+    assert (dinner.title, night.title) == ("便宜餐厅", "江边夜景")
+    assert (night.travel_minutes, night.travel_mode) == costs.leg("便宜餐厅", "江边夜景")
