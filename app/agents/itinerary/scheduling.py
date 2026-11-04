@@ -50,13 +50,21 @@ def dodge_rain(
     options: dict[str, CandidateOption],
     weather: dict[int, str],
     capacities: list[int],
+    whole_day: set[str] | frozenset[str] = frozenset(),
 ) -> list[list[str]]:
     """雨天那天户外景点多、另一天明显更干且户外少时，两天的景点整组对调。
 
     只换日子不换地点：每天内部的顺路关系不变；只在容量相同的两天之间换，
-    "第二天轻松点"这类按天的要求不受影响。
+    "第二天轻松点"这类按天的要求不受影响。whole_day 里的乐园和远郊不换到第一天
+    （build_itinerary 特意把它们挪离第一天，第一天要赶路）。
     """
     plans = [list(plan) for plan in day_plans]
+
+    def lands_whole_day_on_first(wet: int, dry: int) -> bool:
+        if len(plans) < 2 or 1 not in (wet, dry):
+            return False
+        incoming = plans[(dry if wet == 1 else wet) - 1]
+        return any(place_id in whole_day for place_id in incoming)
 
     def outdoor(plan: list[str]) -> int:
         return sum(str(options[place_id].attributes.get("type")) in _OUTDOOR_TYPES for place_id in plan)
@@ -73,6 +81,7 @@ def dodge_rain(
             if day != wet and day not in swapped and chance.get(day) is not None
             and (chance[day] or 0) + DRY_MARGIN <= (chance[wet] or 0)
             and capacities[day - 1] == capacities[wet - 1] and outdoor(plans[day - 1]) < outdoor(plans[wet - 1])
+            and not lands_whole_day_on_first(wet, day)
         ]
         if candidates:
             dry = min(candidates, key=lambda day: chance[day] or 0)
@@ -349,7 +358,8 @@ def build_itinerary(
     day_plans = fill_empty_days(day_plans, [option for option in _candidates(results, "attractions", requirement)
                                             if whole(option)])
     day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
-    day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities)
+    whole_ids = {place_id for plan in day_plans for place_id in plan if whole(options[place_id])}
+    day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities, whole_ids)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)
     ]
