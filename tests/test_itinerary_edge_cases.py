@@ -277,3 +277,115 @@ def test_hotel_falls_back_to_the_first_candidate_when_the_model_picks_nothing():
     assert closer_hotel(PlaceSelection(), results, costs) == "酒店甲"
     assert closer_hotel(PlaceSelection(hotel_id="酒店乙"), results, costs) == "酒店乙"
     assert closer_hotel(PlaceSelection(), [], costs) is None
+
+
+# ---------- 边界情况：走完整的 plan_itinerary（不接模型）再交给 plan_checks ----------
+
+def _plan(wanted, results):
+    import asyncio
+
+    from app.agents.itinerary.planner import plan_itinerary
+
+    return asyncio.run(plan_itinerary(wanted, results))
+
+
+def _issues(wanted, itinerary, results):
+    from app.agents.trip_cost import hotel_price
+    from app.evaluation.plan_checks import check_plan
+
+    class NoCatalog:
+        def cities(self):
+            return []
+
+    return [str(issue) for issue in check_plan(wanted, itinerary, NoCatalog(), hotel_price(itinerary, results))]
+
+
+def _city(food=True):
+    return [
+        result("attractions", [place(f"景点{i}", "attractions", 0.4 * i, cost=30) for i in range(1, 7)]
+               + [place("欢乐谷", "attractions", 6.0, cost=300), place("远郊", "attractions", 60.0, cost=80)]),
+        result("food", [place(f"饭馆{i}", "food", 0.3 * i, cost=60, type="小吃") for i in range(1, 5)] if food else []),
+        result("hotel", [place("酒店", "hotel", 0.0, cost=300)]),
+    ]
+
+
+def test_one_day_trip_is_a_single_full_day():
+    results = _city()
+    wanted = requirement(days=1, styles=["美食"])
+
+    itinerary, _ = _plan(wanted, results)
+
+    assert len(itinerary) == 1 and _issues(wanted, itinerary, results) == []
+    sights = [slot.title for slot in itinerary[0].slots if slot.period in ("morning", "afternoon")]
+    assert len(sights) == 2 and not {"欢乐谷", "远郊"} & set(sights)
+    assert [slot.period for slot in itinerary[0].slots] == ["morning", "lunch", "afternoon", "evening"]
+    # 一天的行程不住宿：备注里有酒店，但不算房费
+    assert itinerary[0].notes[0].startswith("住宿：")
+
+
+def test_more_must_visit_than_slots_keeps_as_many_as_fit_and_reports_the_rest():
+    results = _city()
+    must = ["景点1", "景点2", "景点3", "景点4"]
+    wanted = requirement(days=1, must_visit=must)
+
+    itinerary, warnings = _plan(wanted, results)
+
+    titles = [slot.title for slot in itinerary[0].slots]
+    kept = [name for name in must if name in titles]
+    assert len(kept) == 2
+    missing = [warning for warning in warnings if warning.startswith("itinerary_constraint:must_visit")]
+    assert len(missing) == 2
+    assert [issue for issue in _issues(wanted, itinerary, results) if "点名" not in issue] == []
+
+
+def test_no_restaurants_leaves_every_dinner_free_and_skips_lunch():
+    results = _city(food=False)
+    wanted = requirement(days=3, styles=["美食"])
+
+    itinerary, _ = _plan(wanted, results)
+
+    for day in itinerary:
+        meals = [slot for slot in day.slots if slot.period in ("lunch", "evening")]
+        assert [(slot.period, slot.title) for slot in meals] == [("evening", "自由安排晚餐")]
+        assert meals[0].description == "没有带证据的餐饮候选可安排。"
+    assert _issues(wanted, itinerary, results) == []
+
+
+def test_all_candidates_in_the_outskirts_get_a_day_each_or_share_by_area():
+    """候选全在远郊（按名字认：长城、临潼两片）：同一片的并一天，第一天留给赶路。"""
+    results = [
+        result("attractions", [place("八达岭长城", "attractions", 60.0), place("慕田峪长城", "attractions", 70.0),
+                               place("兵马俑", "attractions", -40.0), place("华清宫", "attractions", -42.0)]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+    wanted = requirement(days=3)
+
+    itinerary, _ = _plan(wanted, results)
+
+    sights = [{slot.title for slot in day.slots if slot.period in ("morning", "afternoon")
+               and not slot.title.startswith(("自由", CITY))} for day in itinerary]
+    assert sights[0] == set()
+    assert sorted(map(sorted, sights[1:])) == [["八达岭长城", "慕田峪长城"], ["兵马俑", "华清宫"]]
+
+
+def test_budget_too_small_is_trimmed_as_far_as_possible_and_reported():
+    from app.agents.trip_cost import estimate_trip_cost, hotel_price
+
+    # 规则选点按候选顺序挑，排在前面的贵、后面的便宜，压预算时有得换
+    results = [
+        result("attractions", [place(f"景点{i}", "attractions", 0.4 * i, cost=20 * (7 - i)) for i in range(1, 7)]),
+        result("food", [place(f"饭馆{i}", "food", 0.3 * i, cost=20 * (5 - i), type="小吃") for i in range(1, 5)]),
+        result("hotel", [place("酒店", "hotel", 0.0, cost=300)]),
+    ]
+    wanted = requirement(days=2, budget=50)
+    untrimmed, _ = schedule_by_rules(wanted, results)
+
+    itinerary, warnings = _plan(wanted, results)
+
+    price = hotel_price(itinerary, results)
+    assert price == 300
+    total = estimate_trip_cost(wanted, itinerary, price).total
+    assert total < estimate_trip_cost(wanted, untrimmed, price).total
+    assert total > 50 and any(warning.startswith("itinerary_constraint:budget") for warning in warnings)
+    assert [issue for issue in _issues(wanted, itinerary, results) if "预算" not in issue] == []

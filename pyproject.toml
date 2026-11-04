@@ -67,6 +67,8 @@ memory = ["mem0ai>=2.0.4,<3"]
 dev = [
     "pytest~=9.0.2",
     "pytest-asyncio~=1.3.0",
+    # 排程引擎的性质测试（tests/test_itinerary_properties.py）
+    "hypothesis~=6.170",
 ]
 
 [tool.setuptools.packages.find]

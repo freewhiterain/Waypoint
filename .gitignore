@@ -36,6 +36,7 @@ build/
 
 # 测试缓存
 .pytest_cache/
+.hypothesis/
 .mypy_cache/
 .coverage
 htmlcov/
