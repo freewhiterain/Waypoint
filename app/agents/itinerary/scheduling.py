@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from itertools import permutations
 
-from app.places.catalog import is_local_food
+from app.places.catalog import is_local_food, named_by
 from app.schemas.planning import CandidateOption, ItineraryDay, TimeSlot, TravelRequirement, WorkerResult
 from app.agents.itinerary.rules import (
     outskirts_area,
@@ -137,6 +137,52 @@ def assign_days(
         remaining.remove(place_id)
 
     return [_best_order(day_places, hotel_id, costs) for day_places in plan]
+
+
+def _arrangeable(plan: list[str], options: dict[str, CandidateOption]) -> bool:
+    """当天的两个景点至少有一种上下午顺序都在开放时间内（只有一个时总能排）。"""
+    if len(plan) < 2:
+        return True
+    first, second = options[plan[0]], options[plan[1]]
+    return (_fits(first, "morning") and _fits(second, "afternoon")) or (
+        _fits(second, "morning") and _fits(first, "afternoon")
+    )
+
+
+def split_late_openers(
+    day_plans: list[list[str]], options: dict[str, CandidateOption], fixed: set[str], keep: set[str]
+) -> list[list[str]]:
+    """同一天两个景点都下午才开门时，上午排哪个都还没开：先和别的日子对调一个，换不了就去掉一个。
+
+    指定了日子的（fixed）不动，用户点名要去的（keep）不去掉；去掉后当天只剩一个，排在下午，
+    上午写"开门较晚"的自由活动。原来照排，上午那个时段写的地方还没开门。
+    """
+    plans = [list(plan) for plan in day_plans]
+    for index, plan in enumerate(plans):
+        if _arrangeable(plan, options):
+            continue
+        swap = next(
+            (
+                (mine, other_index, theirs)
+                for mine in plan if mine not in fixed
+                for other_index, other in enumerate(plans) if other_index != index
+                for theirs in other if theirs not in fixed
+                if _arrangeable([theirs if place_id == mine else place_id for place_id in plan], options)
+                and _arrangeable([mine if place_id == theirs else place_id for place_id in other], options)
+            ),
+            None,
+        )
+        if swap is not None:
+            mine, other_index, theirs = swap
+            plan[plan.index(mine)] = theirs
+            other = plans[other_index]
+            other[other.index(theirs)] = mine
+            continue
+        droppable = [place_id for place_id in plan
+                     if place_id not in fixed and place_id not in keep and not _fits(options[place_id], "morning")]
+        if droppable:
+            plan.remove(droppable[-1])
+    return plans
 
 
 def _day_cost(plan: list[str], hotel_id: str | None, costs: TravelCosts) -> int:
@@ -360,6 +406,8 @@ def build_itinerary(
     day_plans = regroup_days(day_plans, set(preferred), selection.hotel_id, costs)
     whole_ids = {place_id for plan in day_plans for place_id in plan if whole(options[place_id])}
     day_plans = dodge_rain(day_plans, options, _trip_weather(requirement, results), capacities, whole_ids)
+    must_ids = {place_id for place_id, option in options.items() if named_by(option.name, requirement.must_visit)}
+    day_plans = split_late_openers(day_plans, options, set(preferred), must_ids)
     open_for_dinner = [
         option.id for option in _candidates(results, "food", requirement) if _open_during(option, _DINNER_WINDOW)
     ]

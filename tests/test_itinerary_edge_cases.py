@@ -102,3 +102,44 @@ def test_relaxed_trip_with_rain_keeps_the_theme_park_off_day_one():
 
     assert "欢乐谷" not in [slot.title for slot in itinerary[0].slots]
     assert "欢乐谷" in [slot.title for day in itinerary for slot in day.slots]
+
+
+def _sight_slots(itinerary):
+    return [(slot.period, slot.title) for day in itinerary for slot in day.slots
+            if slot.period in ("morning", "afternoon") and not slot.title.startswith(("自由", CITY))]
+
+
+def test_two_late_openers_are_split_across_days():
+    """离酒店最近的两处都下午一点才开门，贪心会把它们排进同一天；对调后每天上午都是开着的地方。"""
+    late = "13:00-21:00"
+    results = [
+        result("attractions", [place("艺术馆", "attractions", 0.5, opening_hours=late),
+                               place("剧场", "attractions", 0.6, opening_hours=late),
+                               place("博物馆", "attractions", 3.0, opening_hours="09:00-17:00"),
+                               place("公园", "attractions", 3.2, opening_hours="06:00-22:00")]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+
+    itinerary, _ = schedule_by_rules(requirement(days=2), results)
+
+    slots = _sight_slots(itinerary)
+    assert {title for _, title in slots} == {"艺术馆", "剧场", "博物馆", "公园"}
+    assert all(period == "afternoon" for period, title in slots if title in ("艺术馆", "剧场")), slots
+
+
+def test_late_opener_that_cannot_be_swapped_is_dropped_but_must_visit_is_kept():
+    late = "13:00-21:00"
+    results = [
+        result("attractions", [place("艺术馆", "attractions", 0.5, opening_hours=late),
+                               place("剧场", "attractions", 0.6, opening_hours=late)]),
+        result("food", [place("饭馆", "food", 0.5)]),
+        result("hotel", [place("酒店", "hotel", 0.0)]),
+    ]
+
+    plain, _ = schedule_by_rules(requirement(days=1), results)
+    named, _ = schedule_by_rules(requirement(days=1, must_visit=["剧场"]), results)
+
+    assert _sight_slots(plain) == [("afternoon", "艺术馆")]
+    assert plain[0].slots[0].title == "自由活动"
+    assert _sight_slots(named) == [("afternoon", "剧场")]
